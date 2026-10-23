@@ -29,3 +29,7 @@ Format: (ticket #, choice, one-line reason).
 - (07, models persist as pickles, the fitted objects are plain Python and pickle is stdlib).
 - (07, one-hot over the top-20 training prefixes with the vocabulary persisted beside the model, encoding must match exactly at inference).
 - (07, Objects created after `as_of` fall back to the decay prior, otherwise scoring would silently drop them from the report).
+- (06, the evaluation decision point is last_event − horizon, otherwise the held-out window is empty and every rung reports zero false evictions).
+- (06, rung 1 archives to COLD, that is the "archive after 30 idle days" policy ADR 0001 criticises).
+- (06, the report recomputes recommendations at the evaluation cut instead of reading `score`'s rows, keeps the artifact self-contained and consistent with the ladder it prints).
+- (06, realised EV = realised savings − realised retrieval cost; predicted EV stays in the recommendations table).

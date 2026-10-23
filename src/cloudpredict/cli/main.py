@@ -5,7 +5,7 @@ from __future__ import annotations
 import argparse
 from collections.abc import Sequence
 
-from cloudpredict.cli import generate, ingest, score, train
+from cloudpredict.cli import generate, ingest, report, score, train
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -18,6 +18,7 @@ def build_parser() -> argparse.ArgumentParser:
     ingest.register(subparsers)
     train.register(subparsers)
     score.register(subparsers)
+    report.register(subparsers)
     return parser
 
 
