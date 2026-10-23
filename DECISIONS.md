@@ -23,3 +23,4 @@ Format: (ticket #, choice, one-line reason).
 - (04, probabilities are quantized to 12 decimal places before Decimal conversion, float estimation must not leak binary noise into money math).
 - (04, default `as_of` is the latest access event, scoring is reproducible against the synthetic log rather than wall-clock dependent).
 - (01 follow-up, generator creation window defaults to 2/3 of the span, otherwise the 30-day smoke run creates Objects after their own evaluation window).
+- (05, no MinIO adapter attempted, the environment returns HTTP 410 on binaries and timing-out registries; the CLI fails explicitly and the CSV path carries the ladder).
