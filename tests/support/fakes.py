@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Sequence
+from datetime import datetime
 
-from cloudpredict.domain.models import AccessEvent, StorageObject
+from cloudpredict.domain.models import AccessEvent, StorageObject, TierDecision
 
 
 class InMemoryRepository:
@@ -13,6 +14,7 @@ class InMemoryRepository:
     def __init__(self) -> None:
         self._objects: dict[tuple[str, str], StorageObject] = {}
         self._events: set[AccessEvent] = set()
+        self._decisions: dict[tuple[str, str, str], TierDecision] = {}
 
     def initialize(self) -> None:
         return None
@@ -46,3 +48,18 @@ class InMemoryRepository:
 
     def event_count(self) -> int:
         return len(self._events)
+
+    def save_decisions(
+        self, estimator: str, as_of: datetime, decisions: Sequence[TierDecision]
+    ) -> int:
+        for decision in decisions:
+            self._decisions[(decision.object_id, estimator, as_of.isoformat())] = decision
+        return len(decisions)
+
+    def list_decisions(self, estimator: str, as_of: datetime) -> list[TierDecision]:
+        matching = [
+            decision
+            for (object_id, decision_estimator, decision_as_of), decision in self._decisions.items()
+            if decision_estimator == estimator and decision_as_of == as_of.isoformat()
+        ]
+        return sorted(matching, key=lambda decision: decision.expected_value, reverse=True)

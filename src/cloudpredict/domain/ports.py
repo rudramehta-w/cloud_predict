@@ -7,7 +7,7 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Protocol
 
-from cloudpredict.domain.models import AccessEvent, StorageObject
+from cloudpredict.domain.models import AccessEvent, StorageObject, TierDecision
 
 
 class StoragePort(Protocol):
@@ -34,6 +34,12 @@ class RepositoryPort(Protocol):
     def object_count(self) -> int: ...
 
     def event_count(self) -> int: ...
+
+    def save_decisions(
+        self, estimator: str, as_of: datetime, decisions: Sequence[TierDecision]
+    ) -> int: ...
+
+    def list_decisions(self, estimator: str, as_of: datetime) -> list[TierDecision]: ...
 
 
 class AccessEstimatorPort(Protocol):

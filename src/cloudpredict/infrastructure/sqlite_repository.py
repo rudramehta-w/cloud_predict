@@ -5,9 +5,10 @@ from __future__ import annotations
 import sqlite3
 from collections.abc import Iterable
 from datetime import datetime
+from decimal import Decimal
 from pathlib import Path
 
-from cloudpredict.domain.models import AccessEvent, StorageObject, Tier
+from cloudpredict.domain.models import AccessEvent, StorageObject, Tier, TierDecision
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS objects (
@@ -23,6 +24,19 @@ CREATE TABLE IF NOT EXISTS access_events (
     key TEXT NOT NULL,
     accessed_at TEXT NOT NULL,
     PRIMARY KEY (bucket, key, accessed_at)
+);
+CREATE TABLE IF NOT EXISTS tier_decisions (
+    object_id TEXT NOT NULL,
+    estimator TEXT NOT NULL,
+    as_of TEXT NOT NULL,
+    from_tier TEXT NOT NULL,
+    to_tier TEXT NOT NULL,
+    access_probability TEXT NOT NULL,
+    storage_savings TEXT NOT NULL,
+    retrieval_penalty TEXT NOT NULL,
+    expected_value TEXT NOT NULL,
+    recommended INTEGER NOT NULL,
+    PRIMARY KEY (object_id, estimator, as_of)
 );
 """
 
@@ -101,6 +115,58 @@ class SqliteRepository:
     def event_count(self) -> int:
         row = self._connection.execute("SELECT COUNT(*) FROM access_events").fetchone()
         return int(row[0])
+
+    def save_decisions(
+        self,
+        estimator: str,
+        as_of: datetime,
+        decisions: Iterable[TierDecision],
+    ) -> int:
+        rows = [
+            (
+                decision.object_id,
+                estimator,
+                as_of.isoformat(),
+                decision.from_tier.value,
+                decision.to_tier.value,
+                str(decision.access_probability),
+                str(decision.storage_savings),
+                str(decision.retrieval_penalty),
+                str(decision.expected_value),
+                int(decision.recommended),
+            )
+            for decision in decisions
+        ]
+        with self._connection:
+            self._connection.executemany(
+                "INSERT OR REPLACE INTO tier_decisions "
+                "(object_id, estimator, as_of, from_tier, to_tier, access_probability, "
+                "storage_savings, retrieval_penalty, expected_value, recommended) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                rows,
+            )
+        return len(rows)
+
+    def list_decisions(self, estimator: str, as_of: datetime) -> list[TierDecision]:
+        cursor = self._connection.execute(
+            "SELECT object_id, from_tier, to_tier, access_probability, storage_savings, "
+            "retrieval_penalty, expected_value, recommended FROM tier_decisions "
+            "WHERE estimator = ? AND as_of = ? ORDER BY expected_value DESC",
+            (estimator, as_of.isoformat()),
+        )
+        return [
+            TierDecision(
+                object_id=row[0],
+                from_tier=Tier(row[1]),
+                to_tier=Tier(row[2]),
+                access_probability=Decimal(row[3]),
+                storage_savings=Decimal(row[4]),
+                retrieval_penalty=Decimal(row[5]),
+                expected_value=Decimal(row[6]),
+                recommended=bool(row[7]),
+            )
+            for row in cursor.fetchall()
+        ]
 
 
 def _parse(value: str) -> datetime:

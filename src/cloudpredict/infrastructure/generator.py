@@ -34,7 +34,7 @@ class GeneratorParams:
     seed: int = 42
     horizon_days: int = 30
     target_positive_fraction: float = 0.20
-    max_creation_day: int = 120
+    max_creation_day: int | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -102,10 +102,13 @@ def generate(params: GeneratorParams) -> tuple[list[SyntheticObject], list[Synth
     rate_scale = calibrate_rate(weights, params.horizon_days, params.target_positive_fraction)
 
     objects: list[SyntheticObject] = []
+    creation_window = (
+        params.max_creation_day if params.max_creation_day is not None else int(params.days * 2 / 3)
+    )
     for index in range(params.n_objects):
         prefix = rng.choices(PREFIXES, weights=PREFIX_WEIGHTS, k=1)[0]
         extension = rng.choice(EXTENSIONS)
-        creation_day = rng.uniform(0.0, params.max_creation_day)
+        creation_day = rng.uniform(0.0, creation_window)
         size_bytes = int(math.exp(rng.gauss(math.log(64 * MEBIBYTE), 1.2)))
         size_bytes = min(max(size_bytes, MEBIBYTE), 100 * GIBIBYTE)
         objects.append(
