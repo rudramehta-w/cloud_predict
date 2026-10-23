@@ -9,6 +9,9 @@ wheels/
 # Virtual environments
 .venv
 
+# Generated pipeline artifacts (synthetic data, models, reports)
+data/
+
 # graphify knowledge-graph outputs (see .github/skills/graphify/)
 graphify-out/
 
