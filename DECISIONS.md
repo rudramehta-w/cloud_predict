@@ -33,3 +33,7 @@ Format: (ticket #, choice, one-line reason).
 - (06, rung 1 archives to COLD, that is the "archive after 30 idle days" policy ADR 0001 criticises).
 - (06, the report recomputes recommendations at the evaluation cut instead of reading `score`'s rows, keeps the artifact self-contained and consistent with the ladder it prints).
 - (06, realised EV = realised savings − realised retrieval cost; predicted EV stays in the recommendations table).
+- (08, the learned rungs use the same FinOpsEngine gate as the heuristic, the only variable between rungs 2–4 is the estimator).
+- (08, the heuristic's predictive metrics are recomputed on the identical test cutoffs as the learned models, a PR-AUC comparison across different samples would be meaningless).
+- (08, `report` requires trained models and fails fast with `EstimatorNotTrainedError`, a silently 3-rung ladder would misrepresent the benchmark).
+- (08, the Oracle moves every Object not accessed in the window to COLD, that is the definition of perfect foresight and the EV ceiling).

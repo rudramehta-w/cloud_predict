@@ -73,10 +73,17 @@ def _bar_chart_svg(rows: list[tuple[str, float]]) -> str:
     return "".join(parts)
 
 
+def _pr_auc(metrics: dict[str, Any], key: str) -> str:
+    payload = metrics.get(key) or {}
+    value = payload.get("pr_auc")
+    return "n/a" if value is None else f"{float(value):.3f}"
+
+
 def render_report(artifact: dict[str, Any]) -> str:
     run = artifact["run"]
     ladder = artifact["ladder"]
     recommendations = artifact["recommendations"]
+    metrics = artifact.get("metrics") or {}
 
     header_rows = [
         ["Decision point", escape(str(run["decision_time"]))],
@@ -103,6 +110,7 @@ def render_report(artifact: dict[str, Any]) -> str:
             str(rung["false_evictions"]),
             str(rung["false_eviction_cost"]),
             "n/a" if rung["ev_capture"] is None else f"{rung['ev_capture']:.1%}",
+            _pr_auc(metrics, str(rung["key"])),
         ]
         for rung in ladder
     ]
@@ -116,6 +124,7 @@ def render_report(artifact: dict[str, Any]) -> str:
             ("False evictions", True),
             ("False-eviction cost", True),
             ("EV Capture", True),
+            ("PR-AUC (test)", True),
         ],
         ladder_rows,
     )

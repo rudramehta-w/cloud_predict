@@ -41,6 +41,15 @@ def key_prefix(key: str) -> str:
     return key.split("/", 1)[0]
 
 
+def derive_calendar(
+    objects: Sequence[StorageObject], events: Sequence[AccessEvent]
+) -> tuple[datetime, int]:
+    """Floor the earliest observation to midnight; span is whole days to the latest."""
+    times = [obj.created_at for obj in objects] + [event.accessed_at for event in events]
+    start = min(times).replace(hour=0, minute=0, second=0, microsecond=0)
+    return start, (max(times) - start).days
+
+
 def temporal_cutoffs(days: int, horizon_days: int, step_days: int = 6) -> list[int]:
     """Cutoff days whose label window still fits inside the simulated span."""
     first = max(horizon_days, days // 10)

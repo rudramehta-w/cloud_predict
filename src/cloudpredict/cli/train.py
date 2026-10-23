@@ -4,8 +4,6 @@ from __future__ import annotations
 
 import argparse
 import json
-from collections.abc import Sequence
-from datetime import datetime
 from pathlib import Path
 from typing import Any, cast
 
@@ -13,11 +11,11 @@ import numpy as np
 import pandas as pd
 
 from cloudpredict.domain.exceptions import CloudPredictError
-from cloudpredict.domain.models import AccessEvent, StorageObject
 from cloudpredict.infrastructure.config import DEFAULT_CONFIG_PATH, load_config
 from cloudpredict.infrastructure.features import (
     LABEL_COLUMN,
     build_samples,
+    derive_calendar,
     encode,
     temporal_cutoffs,
 )
@@ -43,15 +41,6 @@ def register(subparsers: Any) -> None:
     parser.add_argument("--models-dir", type=Path, default=DEFAULT_MODELS_DIR)
     parser.add_argument("--seed", type=int, default=42)
     parser.set_defaults(func=_run)
-
-
-def derive_calendar(
-    objects: Sequence[StorageObject], events: Sequence[AccessEvent]
-) -> tuple[datetime, int]:
-    times = [obj.created_at for obj in objects] + [event.accessed_at for event in events]
-    start = min(times).replace(hour=0, minute=0, second=0, microsecond=0)
-    span_days = (max(times) - start).days
-    return start, span_days
 
 
 def _predict(estimator: TrainedEstimator, frame: pd.DataFrame) -> np.ndarray:
