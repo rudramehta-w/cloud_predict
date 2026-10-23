@@ -141,11 +141,20 @@ def test_report_is_deterministic(artifact_dir: Path, tmp_path: Path) -> None:
 def test_html_is_offline_and_self_contained(artifact_dir: Path) -> None:
     html = (artifact_dir / "report.html").read_text(encoding="utf-8")
 
-    for marker in ("run-config", "ladder", "savings", "recommendations"):
+    for marker in (
+        "run-config",
+        "ladder",
+        "savings",
+        "pr-curves",
+        "calibration",
+        "recommendations",
+    ):
         assert f'id="{marker}"' in html
     assert "PR-AUC" in html
+    assert html.count("<svg") >= 3
+    assert "Precision–recall" in html
+    assert "Calibration" in html
     assert "<script" not in html.lower()
     assert "cdn" not in html.lower()
     assert 'src="http' not in html.lower()
     assert 'href="http' not in html.lower()
-    assert "<svg" in html

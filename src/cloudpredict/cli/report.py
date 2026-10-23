@@ -140,7 +140,6 @@ def _run(args: argparse.Namespace) -> int:
             }
             for decision in top
         ],
-        "charts": [],
     }
 
     args.out.mkdir(parents=True, exist_ok=True)
