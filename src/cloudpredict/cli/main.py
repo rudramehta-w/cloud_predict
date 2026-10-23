@@ -5,7 +5,7 @@ from __future__ import annotations
 import argparse
 from collections.abc import Sequence
 
-from cloudpredict.cli import generate
+from cloudpredict.cli import generate, ingest
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -15,6 +15,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
     generate.register(subparsers)
+    ingest.register(subparsers)
     return parser
 
 

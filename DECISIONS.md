@@ -14,3 +14,6 @@ Format: (ticket #, choice, one-line reason).
 - (02, dev tooling in a PEP 735 `[dependency-groups]` group, keeps runtime dependencies empty per ADR 0003 while CI installs gates).
 - (01, Objects created uniformly over days 0–120 of the 180-day span, every Object exists for the whole evaluation window so the calibration target is meaningful).
 - (01, one global Rate scale solved by bisection to hit the 20% expected hit fraction, the spec fixes the band and the seed, this is the simplest calibration that hits it deterministically).
+- (03, `object_id` is `bucket/key`, the glossary addresses an Object by bucket and key and every later table keys on that string).
+- (03, `ingest --source minio` raises `UnsupportedSourceError` naming ticket 05, ticket 05 is ready-for-human and the failure must be explicit rather than a silent no-op).
+- (03, `reset()` before every file ingest, a rerun must produce the same store rather than accumulate duplicates; CSV rows are the source of truth).
