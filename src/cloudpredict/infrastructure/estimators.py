@@ -22,7 +22,7 @@ def build_estimator(
     if name == HEURISTIC:
         return DecayFrequencyEstimator(horizon_days=config.scoring_horizon_days)
     if name in (XGBOOST, RANDOM_FOREST):
-        from cloudpredict.infrastructure.ml_estimator import load_estimator  # type: ignore[import-untyped]
+        from cloudpredict.infrastructure.ml_estimator import load_estimator
 
         return cast(
             AccessEstimatorPort,

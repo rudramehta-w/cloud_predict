@@ -24,3 +24,8 @@ Format: (ticket #, choice, one-line reason).
 - (04, default `as_of` is the latest access event, scoring is reproducible against the synthetic log rather than wall-clock dependent).
 - (01 follow-up, generator creation window defaults to 2/3 of the span, otherwise the 30-day smoke run creates Objects after their own evaluation window).
 - (05, no MinIO adapter attempted, the environment returns HTTP 410 on binaries and timing-out registries; the CLI fails explicitly and the CSV path carries the ladder).
+- (07, cutoffs every 6 days from day 30 to span−30, features only read data ≤ cutoff, so overlapping label windows across cutoffs are not leakage).
+- (07, train on the train split only and report validation metrics without a tuning loop, hyperparameters are fixed and documented rather than searched on a short timeline).
+- (07, models persist as pickles, the fitted objects are plain Python and pickle is stdlib).
+- (07, one-hot over the top-20 training prefixes with the vocabulary persisted beside the model, encoding must match exactly at inference).
+- (07, Objects created after `as_of` fall back to the decay prior, otherwise scoring would silently drop them from the report).
