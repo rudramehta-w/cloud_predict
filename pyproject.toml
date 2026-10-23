@@ -12,3 +12,33 @@ cloudpredict = "cloudpredict:main"
 [build-system]
 requires = ["uv_build>=0.13.4,<0.14.0"]
 build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "ruff>=0.6",
+    "mypy>=1.10",
+    "pytest>=8",
+    "hypothesis>=6",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+
+[tool.mypy]
+python_version = "3.12"
+mypy_path = "src"
+files = ["src/cloudpredict"]
+warn_unused_configs = true
+
+[[tool.mypy.overrides]]
+module = "cloudpredict.domain.*"
+strict = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"

@@ -10,3 +10,5 @@ Format: (ticket #, choice, one-line reason).
 - (chore, dropped Pydantic from the standards, a Pydantic-based domain violates ADR 0002's zero-dependency domain; stdlib dataclasses are used instead).
 - (chore, deleted `repomix-output.xml` from tracking, it is a generated dump that was swept into the previous commit and is already gone from disk).
 - (chore, `docs/standards/python.md` amended to sync + sqlite3, ADRs 0003/0005 override the old async/SQLAlchemy/aioboto3 mandates).
+- (02, ticket closed as `Status: done`, the local tracker defines no closing label and `done` is the clearest terminal state next to the five triage roles).
+- (02, dev tooling in a PEP 735 `[dependency-groups]` group, keeps runtime dependencies empty per ADR 0003 while CI installs gates).
