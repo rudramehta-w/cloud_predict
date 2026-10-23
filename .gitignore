@@ -14,6 +14,7 @@ graphify-out/
 
 #agent and tools
 .freebuff
-.github
+.github/*
+!.github/workflows/
 .qoder
 .qodo

@@ -1,0 +1,12 @@
+# Decisions
+
+Every ambiguity call made during the AFK implementation run, in the order the
+ground rules define: spec.md, then ADRs, then GLOSSARY.md, then the simplest
+option consistent with all three.
+
+Format: (ticket #, choice, one-line reason).
+
+- (chore, `.github/*` + `!.github/workflows/` in `.gitignore`, ticket 02 requires a committed GitHub Actions workflow while the graphify installer had ignored all of `.github`).
+- (chore, dropped Pydantic from the standards, a Pydantic-based domain violates ADR 0002's zero-dependency domain; stdlib dataclasses are used instead).
+- (chore, deleted `repomix-output.xml` from tracking, it is a generated dump that was swept into the previous commit and is already gone from disk).
+- (chore, `docs/standards/python.md` amended to sync + sqlite3, ADRs 0003/0005 override the old async/SQLAlchemy/aioboto3 mandates).
