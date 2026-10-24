@@ -84,6 +84,14 @@ class SqliteRepository:
             )
         return len(rows)
 
+    def delete_access_events(self, bucket: str, keys: Iterable[str]) -> int:
+        doomed = [(bucket, key) for key in keys]
+        with self._connection:
+            self._connection.executemany(
+                "DELETE FROM access_events WHERE bucket = ? AND key = ?", doomed
+            )
+        return len(doomed)
+
     def list_objects(self) -> list[StorageObject]:
         cursor = self._connection.execute(
             "SELECT bucket, key, size_bytes, created_at, tier FROM objects ORDER BY bucket, key"

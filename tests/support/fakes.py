@@ -37,6 +37,12 @@ class InMemoryRepository:
             count += 1
         return count
 
+    def delete_access_events(self, bucket: str, keys: Sequence[str]) -> int:
+        wanted = set(keys)
+        doomed = {event for event in self._events if event.bucket == bucket and event.key in wanted}
+        self._events -= doomed
+        return len(doomed)
+
     def list_objects(self) -> list[StorageObject]:
         return sorted(self._objects.values(), key=lambda obj: (obj.bucket, obj.key))
 

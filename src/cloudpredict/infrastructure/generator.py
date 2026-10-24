@@ -80,7 +80,8 @@ def calibrate_rate(weights: Sequence[float], horizon_days: int, target: float) -
     return (low + high) / 2
 
 
-def _poisson(rng: random.Random, lam: float) -> int:
+def sample_poisson(rng: random.Random, lam: float) -> int:
+    """Sample a Poisson count; Knuth below 50, normal approximation above."""
     if lam <= 0.0:
         return 0
     if lam > 50.0:
@@ -126,7 +127,7 @@ def generate(params: GeneratorParams) -> tuple[list[SyntheticObject], list[Synth
         creation_day = (obj.created_at - CALENDAR_START).total_seconds() / 86400.0
         exposure_days = params.days - creation_day
         lam = rate_scale * weight * exposure_days
-        for _ in range(_poisson(rng, lam)):
+        for _ in range(sample_poisson(rng, lam)):
             offset = rng.uniform(creation_day, params.days)
             accessed_at = CALENDAR_START + timedelta(days=offset)
             accesses.append(SyntheticAccess(obj.bucket, obj.key, accessed_at))
