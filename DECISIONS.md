@@ -41,3 +41,7 @@ Format: (ticket #, choice, one-line reason).
 - (10, the view is an ASGI app started with `uvicorn cloudpredict.web.app:app`, not a sixth CLI subcommand, the spec fixes five stage commands and a view is not a stage).
 - (10, the artifact path comes from `CLOUDPREDICT_REPORT` with a `data/report/report.json` default, one environment variable is enough for a read-only projection).
 - (10, filter and sort are vanilla inline JavaScript with no CDN, the view must work offline exactly like the HTML report).
+- (review, `train` reads the Scoring Horizon from `[run] scoring_horizon_days` and the config loader rejects a mismatched `[generator] horizon_days`, one horizon must have one source of truth).
+- (review, samples are purged so no label window crosses a split boundary; when H exceeds the validation width the validation split is empty and its metrics are null rather than optimistic).
+- (review, the learned estimator always merges the decay fallback, an all-empty feature frame must not surface as a KeyError in `score`).
+- (review, the report records the data seed from the generator manifest and the model seed from `metrics.json`, provenance must describe the data actually scored).
