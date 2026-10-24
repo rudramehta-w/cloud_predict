@@ -72,6 +72,22 @@ class AccessEvent:
 
 
 @dataclass(frozen=True, slots=True)
+class MigrationRecord:
+    """One row of the migration ledger: what the execution layer actually did."""
+
+    object_key: str
+    from_bucket: str
+    to_bucket: str
+    size_bytes: int
+    etag: str | None
+    savings_usd: Decimal
+    ev_usd: Decimal
+    status: str
+    detail: str
+    moved_at: datetime
+
+
+@dataclass(frozen=True, slots=True)
 class TierDecision:
     """The priced outcome of considering one tier move for one Object."""
 

@@ -108,6 +108,7 @@ def seed_hot_bucket(
     repository: SqliteRepository,
     *,
     hot_bucket: str = "hot",
+    cold_bucket: str = "cold",
     count: int = DEFAULT_COUNT,
     seed: int = DEFAULT_SEED,
     size_range_mib: tuple[int, int] = DEFAULT_SIZE_RANGE_MIB,
@@ -119,11 +120,17 @@ def seed_hot_bucket(
     anchor = anchor or datetime.now(UTC)
     created_at = anchor - timedelta(days=history_days)
     plans = plan_objects(count=count, seed=seed, size_range_mib=size_range_mib)
+    keys = [plan.key for plan in plans]
+
+    # A re-seed resets the demo: stale cold copies and rows are cleared first.
+    repository.delete_objects(keys)
 
     uploaded = 0
     skipped = 0
     objects: list[StorageObject] = []
     for plan in plans:
+        if storage.head(cold_bucket, plan.key) is not None:
+            storage.delete_object(cold_bucket, plan.key)
         path = workdir / Path(plan.key).name
         if not path.exists() or path.stat().st_size != plan.size_bytes:
             write_sparse_file(path, plan.size_bytes)
@@ -143,7 +150,7 @@ def seed_hot_bucket(
         )
 
     repository.add_objects(objects)
-    repository.delete_access_events(hot_bucket, [plan.key for plan in plans])
+    repository.delete_access_events(hot_bucket, keys)
     events = simulate_accesses(plans, created_at, anchor, seed=seed)
     repository.add_access_events(events)
 

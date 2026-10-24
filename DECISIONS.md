@@ -45,3 +45,8 @@ Format: (ticket #, choice, one-line reason).
 - (review, samples are purged so no label window crosses a split boundary; when H exceeds the validation width the validation split is empty and its metrics are null rather than optimistic).
 - (review, the learned estimator always merges the decay fallback, an all-empty feature frame must not surface as a KeyError in `score`).
 - (review, the report records the data seed from the generator manifest and the model seed from `metrics.json`, provenance must describe the data actually scored).
+- (13, the Object row and its access events follow it to the new bucket, object identity currently includes the bucket; keying identity on the key alone is the production fix).
+- (13, skipped Objects are not written to the ledger, idempotent re-runs must not duplicate ledger rows).
+- (13, an ETag mismatch discards the destination copy and keeps the source, a wrong copy must never become the surviving version).
+- (13, apply takes its inventory from the live hot bucket and the DB only for access history, the bucket is the source of truth for what exists).
+- (13, re-seeding deletes stale cold copies and DB rows for the planned keys, otherwise the demo cannot restart from a clean slate).

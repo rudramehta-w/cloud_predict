@@ -7,7 +7,13 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Protocol
 
-from cloudpredict.domain.models import AccessEvent, ObjectHead, StorageObject, TierDecision
+from cloudpredict.domain.models import (
+    AccessEvent,
+    MigrationRecord,
+    ObjectHead,
+    StorageObject,
+    TierDecision,
+)
 
 
 class StoragePort(Protocol):
@@ -54,6 +60,14 @@ class RepositoryPort(Protocol):
     ) -> int: ...
 
     def list_decisions(self, estimator: str, as_of: datetime) -> list[TierDecision]: ...
+
+    def append_migration(self, record: MigrationRecord) -> None: ...
+
+    def list_migrations(self, limit: int = 50) -> list[MigrationRecord]: ...
+
+    def move_object(self, from_bucket: str, to_bucket: str, key: str, tier: str) -> None: ...
+
+    def delete_objects(self, keys: Sequence[str]) -> int: ...
 
 
 class AccessEstimatorPort(Protocol):

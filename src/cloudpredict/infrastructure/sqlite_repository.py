@@ -3,12 +3,18 @@
 from __future__ import annotations
 
 import sqlite3
-from collections.abc import Iterable
+from collections.abc import Iterable, Sequence
 from datetime import datetime
 from decimal import Decimal
 from pathlib import Path
 
-from cloudpredict.domain.models import AccessEvent, StorageObject, Tier, TierDecision
+from cloudpredict.domain.models import (
+    AccessEvent,
+    MigrationRecord,
+    StorageObject,
+    Tier,
+    TierDecision,
+)
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS objects (
@@ -38,6 +44,20 @@ CREATE TABLE IF NOT EXISTS tier_decisions (
     recommended INTEGER NOT NULL,
     PRIMARY KEY (object_id, estimator, as_of)
 );
+CREATE TABLE IF NOT EXISTS migration_ledger (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    object_key TEXT NOT NULL,
+    from_bucket TEXT NOT NULL,
+    to_bucket TEXT NOT NULL,
+    size_bytes INTEGER NOT NULL,
+    etag TEXT,
+    savings_usd TEXT NOT NULL,
+    ev_usd TEXT NOT NULL,
+    status TEXT NOT NULL,
+    detail TEXT NOT NULL,
+    moved_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_ledger_moved_at ON migration_ledger(moved_at);
 """
 
 
@@ -175,6 +195,68 @@ class SqliteRepository:
             )
             for row in cursor.fetchall()
         ]
+
+    def append_migration(self, record: MigrationRecord) -> None:
+        with self._connection:
+            self._connection.execute(
+                "INSERT INTO migration_ledger (object_key, from_bucket, to_bucket, size_bytes, "
+                "etag, savings_usd, ev_usd, status, detail, moved_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    record.object_key,
+                    record.from_bucket,
+                    record.to_bucket,
+                    record.size_bytes,
+                    record.etag,
+                    str(record.savings_usd),
+                    str(record.ev_usd),
+                    record.status,
+                    record.detail,
+                    record.moved_at.isoformat(),
+                ),
+            )
+
+    def list_migrations(self, limit: int = 50) -> list[MigrationRecord]:
+        cursor = self._connection.execute(
+            "SELECT object_key, from_bucket, to_bucket, size_bytes, etag, savings_usd, ev_usd, "
+            "status, detail, moved_at FROM migration_ledger ORDER BY id DESC LIMIT ?",
+            (limit,),
+        )
+        return [
+            MigrationRecord(
+                object_key=row[0],
+                from_bucket=row[1],
+                to_bucket=row[2],
+                size_bytes=int(row[3]),
+                etag=row[4],
+                savings_usd=Decimal(row[5]),
+                ev_usd=Decimal(row[6]),
+                status=row[7],
+                detail=row[8],
+                moved_at=_parse(row[9]),
+            )
+            for row in cursor.fetchall()
+        ]
+
+    def move_object(self, from_bucket: str, to_bucket: str, key: str, tier: str) -> None:
+        """The Object and its history follow it to the new bucket."""
+        with self._connection:
+            self._connection.execute(
+                "UPDATE objects SET bucket = ?, tier = ? WHERE bucket = ? AND key = ?",
+                (to_bucket, tier, from_bucket, key),
+            )
+            self._connection.execute(
+                "UPDATE access_events SET bucket = ? WHERE bucket = ? AND key = ?",
+                (to_bucket, from_bucket, key),
+            )
+
+    def delete_objects(self, keys: Sequence[str]) -> int:
+        """Remove every row for these keys, in any bucket (used by re-seeding)."""
+        rows = [(key,) for key in keys]
+        with self._connection:
+            self._connection.executemany("DELETE FROM objects WHERE key = ?", rows)
+            self._connection.executemany("DELETE FROM access_events WHERE key = ?", rows)
+        return len(rows)
 
 
 def _parse(value: str) -> datetime:
