@@ -50,3 +50,7 @@ Format: (ticket #, choice, one-line reason).
 - (13, an ETag mismatch discards the destination copy and keeps the source, a wrong copy must never become the surviving version).
 - (13, apply takes its inventory from the live hot bucket and the DB only for access history, the bucket is the source of truth for what exists).
 - (13, re-seeding deletes stale cold copies and DB rows for the planned keys, otherwise the demo cannot restart from a clean slate).
+- (14, SSE is delivered over a POST read with fetch streaming instead of EventSource, EventSource cannot send POST).
+- (14, one process-wide lock serialises seed and apply, concurrent mutations would race the buckets and the ledger).
+- (14, re-seeding clears the ledger rows for its keys, a demo restart must not show savings for Objects that are back in hot).
+- (14, the "moved" card counts ledger rows, the visible table only shows the eight most recent).

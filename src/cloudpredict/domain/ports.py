@@ -69,6 +69,10 @@ class RepositoryPort(Protocol):
 
     def delete_objects(self, keys: Sequence[str]) -> int: ...
 
+    def delete_migrations(self, keys: Sequence[str]) -> int: ...
+
+    def count_migrations(self, status: str | None = None) -> int: ...
+
 
 class AccessEstimatorPort(Protocol):
     """Estimates Access Probability per Object at a point in time."""

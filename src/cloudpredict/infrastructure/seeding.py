@@ -124,6 +124,7 @@ def seed_hot_bucket(
 
     # A re-seed resets the demo: stale cold copies and rows are cleared first.
     repository.delete_objects(keys)
+    repository.delete_migrations(keys)
 
     uploaded = 0
     skipped = 0

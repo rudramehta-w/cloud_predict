@@ -108,6 +108,17 @@ class InMemoryRepository:
         self._events = {event for event in self._events if event.key not in wanted}
         return len(removed)
 
+    def delete_migrations(self, keys: Sequence[str]) -> int:
+        wanted = set(keys)
+        before = len(self._migrations)
+        self._migrations = [row for row in self._migrations if row.object_key not in wanted]
+        return before - len(self._migrations)
+
+    def count_migrations(self, status: str | None = None) -> int:
+        if status is None:
+            return len(self._migrations)
+        return sum(1 for row in self._migrations if row.status == status)
+
 
 class FakeExecutionStorage:
     """In-memory StorageExecutionPort with injectable failures and call order."""

@@ -258,6 +258,21 @@ class SqliteRepository:
             self._connection.executemany("DELETE FROM access_events WHERE key = ?", rows)
         return len(rows)
 
+    def delete_migrations(self, keys: Sequence[str]) -> int:
+        rows = [(key,) for key in keys]
+        with self._connection:
+            self._connection.executemany("DELETE FROM migration_ledger WHERE object_key = ?", rows)
+        return len(rows)
+
+    def count_migrations(self, status: str | None = None) -> int:
+        if status is None:
+            row = self._connection.execute("SELECT COUNT(*) FROM migration_ledger").fetchone()
+        else:
+            row = self._connection.execute(
+                "SELECT COUNT(*) FROM migration_ledger WHERE status = ?", (status,)
+            ).fetchone()
+        return int(row[0])
+
 
 def _parse(value: str) -> datetime:
     return datetime.fromisoformat(value)
