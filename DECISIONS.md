@@ -37,3 +37,7 @@ Format: (ticket #, choice, one-line reason).
 - (08, the heuristic's predictive metrics are recomputed on the identical test cutoffs as the learned models, a PR-AUC comparison across different samples would be meaningless).
 - (08, `report` requires trained models and fails fast with `EstimatorNotTrainedError`, a silently 3-rung ladder would misrepresent the benchmark).
 - (08, the Oracle moves every Object not accessed in the window to COLD, that is the definition of perfect foresight and the EV ceiling).
+- (09, charts are hand-rendered inline SVG with no chart library, the report must open offline and a CDN is the failure mode a defence room hits).
+- (10, the view is an ASGI app started with `uvicorn cloudpredict.web.app:app`, not a sixth CLI subcommand, the spec fixes five stage commands and a view is not a stage).
+- (10, the artifact path comes from `CLOUDPREDICT_REPORT` with a `data/report/report.json` default, one environment variable is enough for a read-only projection).
+- (10, filter and sort are vanilla inline JavaScript with no CDN, the view must work offline exactly like the HTML report).
