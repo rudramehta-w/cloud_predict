@@ -38,20 +38,22 @@ def _samples() -> tuple[
     start, span = derive_calendar(objects, events)
     cutoffs = temporal_cutoffs(span, HORIZON)
     frame = build_samples(objects, events, cutoffs, start, HORIZON)
-    train, validation, test = split_temporally(frame)
+    train, validation, test = split_temporally(frame, HORIZON)
     return (train, validation, test), frame, (objects, events)
 
 
-def test_split_is_temporal_and_disjoint() -> None:
+def test_split_is_temporal_and_purged() -> None:
     (train, validation, test), _, _ = _samples()
 
     train_cutoffs = set(train["cutoff_day"])
     validation_cutoffs = set(validation["cutoff_day"])
     test_cutoffs = set(test["cutoff_day"])
 
-    assert train_cutoffs and validation_cutoffs and test_cutoffs
-    assert max(train_cutoffs) < min(validation_cutoffs)
-    assert max(validation_cutoffs) < min(test_cutoffs)
+    assert train_cutoffs and test_cutoffs
+    assert max(train_cutoffs) + HORIZON < min(test_cutoffs)
+    if validation_cutoffs:
+        assert max(train_cutoffs) + HORIZON < min(validation_cutoffs)
+        assert max(validation_cutoffs) + HORIZON < min(test_cutoffs)
 
 
 def test_models_train_and_metrics_are_sane() -> None:

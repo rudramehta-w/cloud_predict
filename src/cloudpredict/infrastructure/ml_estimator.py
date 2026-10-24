@@ -60,16 +60,17 @@ class TrainedEstimator:
             include_label=False,
         )
         if frame.empty:
-            return {}
-        probabilities = self.model.predict_proba(encode(frame, self.prefixes))[:, 1]
-        result = {
-            str(object_id): Decimal(str(round(float(probability), 12))).quantize(
-                PROBABILITY_QUANTUM
-            )
-            for object_id, probability in zip(
-                frame[OBJECT_ID_COLUMN].tolist(), probabilities, strict=True
-            )
-        }
+            result: dict[str, Decimal] = {}
+        else:
+            probabilities = self.model.predict_proba(encode(frame, self.prefixes))[:, 1]
+            result = {
+                str(object_id): Decimal(str(round(float(probability), 12))).quantize(
+                    PROBABILITY_QUANTUM
+                )
+                for object_id, probability in zip(
+                    frame[OBJECT_ID_COLUMN].tolist(), probabilities, strict=True
+                )
+            }
         # Objects created after ``as_of`` have no feature row; fall back to the
         # heuristic prior rather than dropping them from scoring.
         fallback = DecayFrequencyEstimator(horizon_days=self.horizon_days).estimate(
@@ -190,18 +191,37 @@ def load_estimator(name: str, models_dir: Path, horizon_days: int) -> TrainedEst
 
 
 def split_temporally(
-    frame: pd.DataFrame,
+    frame: pd.DataFrame, horizon_days: int
 ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
-    """70/15/15 over cutoff days, never over rows (that would leak the future)."""
-    cutoffs = sorted(frame["cutoff_day"].unique())
+    """70/15/15 over cutoff days, purged so no label window crosses a split.
+
+    A sample at cutoff ``c`` has a label in ``(c, c + horizon]``. Splitting only
+    on cutoffs would let train labels read events inside the validation period,
+    so each split is purged against the start of the next one. When purging
+    empties the validation split (horizon longer than the split width), train is
+    purged against the test start instead and validation metrics are ``None``.
+    """
+    cutoffs = [int(value) for value in sorted(frame["cutoff_day"].unique())]
     if len(cutoffs) < 3:
         raise ValueError(f"need at least 3 cutoffs for a temporal split, got {len(cutoffs)}")
     train_end = max(1, int(len(cutoffs) * 0.70))
     validation_end = max(train_end + 1, int(len(cutoffs) * 0.85))
 
-    train = frame[frame["cutoff_day"].isin(cutoffs[:train_end])]
-    validation = frame[frame["cutoff_day"].isin(cutoffs[train_end:validation_end])]
-    test = frame[frame["cutoff_day"].isin(cutoffs[validation_end:])]
+    def purged(values: list[int], boundary: int) -> list[int]:
+        return [value for value in values if value + horizon_days < boundary]
+
+    train_cutoffs = cutoffs[:train_end]
+    validation_cutoffs = cutoffs[train_end:validation_end]
+    test_cutoffs = cutoffs[validation_end:]
+
+    test_start = min(test_cutoffs)
+    validation_cutoffs = purged(validation_cutoffs, test_start)
+    train_boundary = min(validation_cutoffs) if validation_cutoffs else test_start
+    train_cutoffs = purged(train_cutoffs, train_boundary)
+
+    train = frame[frame["cutoff_day"].isin(train_cutoffs)]
+    validation = frame[frame["cutoff_day"].isin(validation_cutoffs)]
+    test = frame[frame["cutoff_day"].isin(test_cutoffs)]
     return train, validation, test
 
 

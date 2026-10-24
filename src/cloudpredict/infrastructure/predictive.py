@@ -50,7 +50,7 @@ def predictive_metrics(
     start, span = derive_calendar(objects, events)
     cutoffs = temporal_cutoffs(span, horizon_days)
     frame = build_samples(objects, events, cutoffs, start, horizon_days)
-    test_frame = split_temporally(frame)[2]
+    test_frame = split_temporally(frame, horizon_days)[2]
 
     estimator = DecayFrequencyEstimator(horizon_days=horizon_days)
     scores: list[float] = []

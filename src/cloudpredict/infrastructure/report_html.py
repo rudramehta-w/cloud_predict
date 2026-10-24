@@ -253,6 +253,8 @@ def render_report(artifact: dict[str, Any]) -> str:
         ["Price capture date", escape(str(run["pricing"]["captured_on"]))],
         ["Seed", str(run.get("seed", "n/a"))],
     ]
+    if run.get("model_seed") is not None:
+        header_rows.append(["Model seed", str(run["model_seed"])])
     header_table = _table(
         [("Parameter", False), ("Value", False)],
         [[escape(str(left)), right] for left, right in header_rows],

@@ -56,6 +56,12 @@ def load_config(path: Path = DEFAULT_CONFIG_PATH) -> Config:
         target_positive_fraction=float(generator_raw.get("target_positive_fraction", 0.20)),
     )
 
+    if generator.horizon_days != int(run["scoring_horizon_days"]):
+        raise ValueError(
+            "[generator] horizon_days must equal [run] scoring_horizon_days: "
+            "labels, calibration, and estimator training all share one Scoring Horizon"
+        )
+
     return Config(
         tiers=tiers,
         min_ev_margin=Decimal(run["min_ev_margin"]),

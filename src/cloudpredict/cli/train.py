@@ -51,7 +51,7 @@ def _predict(estimator: TrainedEstimator, frame: pd.DataFrame) -> np.ndarray:
 
 def _run(args: argparse.Namespace) -> int:
     config = load_config(args.config)
-    horizon_days = config.generator.horizon_days
+    horizon_days = config.scoring_horizon_days
 
     repository = SqliteRepository(args.db)
     try:
@@ -74,7 +74,7 @@ def _run(args: argparse.Namespace) -> int:
         )
 
     frame = build_samples(objects, events, cutoffs, calendar_start, horizon_days)
-    train_frame, validation_frame, test_frame = split_temporally(frame)
+    train_frame, validation_frame, test_frame = split_temporally(frame, horizon_days)
     prefixes = prefix_vocabulary(train_frame)
 
     metrics: dict[str, object] = {
@@ -100,8 +100,12 @@ def _run(args: argparse.Namespace) -> int:
         )
         save_estimator(estimator, args.models_dir)
 
-        validation_metrics = compute_metrics(
-            validation_frame[LABEL_COLUMN].to_numpy(), _predict(estimator, validation_frame)
+        validation_metrics = (
+            compute_metrics(
+                validation_frame[LABEL_COLUMN].to_numpy(), _predict(estimator, validation_frame)
+            )
+            if len(validation_frame)
+            else None
         )
         test_metrics = compute_metrics(
             test_frame[LABEL_COLUMN].to_numpy(), _predict(estimator, test_frame)

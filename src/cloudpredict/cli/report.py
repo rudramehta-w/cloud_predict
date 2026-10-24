@@ -30,6 +30,7 @@ from cloudpredict.infrastructure.sqlite_repository import SqliteRepository
 DEFAULT_DB = Path("data/cloudpredict.db")
 DEFAULT_OUT = Path("data/report")
 DEFAULT_MODELS_DIR = Path("data/models")
+DEFAULT_SYNTHETIC_DIR = Path("data/synthetic")
 HEURISTIC = "decay-frequency"
 LEARNED_RUNGS = (("xgboost", "3 · XGBoost"), ("random-forest", "4 · Random Forest"))
 
@@ -40,6 +41,7 @@ def register(subparsers: Any) -> None:
     parser.add_argument("--config", type=Path, default=DEFAULT_CONFIG_PATH)
     parser.add_argument("--out", type=Path, default=DEFAULT_OUT)
     parser.add_argument("--models-dir", type=Path, default=DEFAULT_MODELS_DIR)
+    parser.add_argument("--synthetic-dir", type=Path, default=DEFAULT_SYNTHETIC_DIR)
     parser.add_argument("--top", type=int, default=25, help="recommendations shown in the report")
     parser.set_defaults(func=_run)
 
@@ -79,6 +81,23 @@ def build_rungs(
     return rungs, probabilities
 
 
+def _seed_provenance(config: Any, synthetic_dir: Path, models_dir: Path) -> tuple[int, int | None]:
+    """Report the seed the data was generated with and the seed the models were trained with."""
+    data_seed = config.generator.seed
+    manifest = synthetic_dir / "manifest.json"
+    if manifest.exists():
+        payload = json.loads(manifest.read_text(encoding="utf-8"))
+        data_seed = int(payload.get("params", {}).get("seed", data_seed))
+
+    model_seed: int | None = None
+    metrics_path = models_dir / "metrics.json"
+    if metrics_path.exists():
+        trained = json.loads(metrics_path.read_text(encoding="utf-8"))
+        value = trained.get("run", {}).get("seed")
+        model_seed = None if value is None else int(value)
+    return data_seed, model_seed
+
+
 def _run(args: argparse.Namespace) -> int:
     config = load_config(args.config)
     horizon_days = config.scoring_horizon_days
@@ -102,6 +121,7 @@ def _run(args: argparse.Namespace) -> int:
     )
     results = run_ladder(rungs, objects, events, at, config.tiers, horizon_days)
     metrics = predictive_metrics(objects, events, horizon_days, args.models_dir)
+    data_seed, model_seed = _seed_provenance(config, args.synthetic_dir, args.models_dir)
 
     candidates = [
         decision
@@ -123,7 +143,8 @@ def _run(args: argparse.Namespace) -> int:
                 "region": config.pricing.region,
                 "captured_on": config.pricing.captured_on,
             },
-            "seed": config.generator.seed,
+            "seed": data_seed,
+            "model_seed": model_seed,
             "estimator": HEURISTIC,
         },
         "ladder": [result.to_dict() for result in results],
