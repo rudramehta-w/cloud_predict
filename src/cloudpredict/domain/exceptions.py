@@ -15,5 +15,9 @@ class UnsupportedSourceError(CloudPredictError):
     """The requested ingest source has no available adapter."""
 
 
+class StorageError(CloudPredictError):
+    """The object store rejected an operation."""
+
+
 class EstimatorNotTrainedError(CloudPredictError):
     """A learned estimator was requested before ``train`` produced a model."""

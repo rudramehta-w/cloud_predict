@@ -7,13 +7,25 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Protocol
 
-from cloudpredict.domain.models import AccessEvent, StorageObject, TierDecision
+from cloudpredict.domain.models import AccessEvent, ObjectHead, StorageObject, TierDecision
 
 
 class StoragePort(Protocol):
     """Reads Object inventory from an object store; never mutates it."""
 
     def list_objects(self, bucket: str) -> list[StorageObject]: ...
+
+
+class StorageExecutionPort(Protocol):
+    """The mutating half of a store, used only by the apply engine."""
+
+    def head(self, bucket: str, key: str) -> ObjectHead | None: ...
+
+    def copy_object(self, source_bucket: str, key: str, destination_bucket: str) -> str:
+        """Copy and return the destination ETag."""
+        ...
+
+    def delete_object(self, bucket: str, key: str) -> None: ...
 
 
 class RepositoryPort(Protocol):

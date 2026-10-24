@@ -49,6 +49,16 @@ class StorageObject:
 
 
 @dataclass(frozen=True, slots=True)
+class ObjectHead:
+    """What the store reports about one stored Object without downloading it."""
+
+    bucket: str
+    key: str
+    size_bytes: int
+    etag: str
+
+
+@dataclass(frozen=True, slots=True)
 class AccessEvent:
     """One recorded read of an Object."""
 

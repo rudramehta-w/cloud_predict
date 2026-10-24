@@ -2,6 +2,12 @@
 min_ev_margin = "0.00"
 scoring_horizon_days = 30
 
+[backend]
+endpoint_url = "http://localhost:9000"
+hot_bucket = "hot"
+cold_bucket = "cold"
+region = "us-east-1"
+
 [pricing]
 source = "https://aws.amazon.com/s3/pricing/"
 region = "us-east-1"

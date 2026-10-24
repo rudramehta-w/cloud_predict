@@ -23,12 +23,21 @@ class PricingMetadata:
 
 
 @dataclass(frozen=True, slots=True)
+class BackendSettings:
+    endpoint_url: str
+    hot_bucket: str
+    cold_bucket: str
+    region: str
+
+
+@dataclass(frozen=True, slots=True)
 class Config:
     tiers: dict[Tier, TierPrice]
     min_ev_margin: Decimal
     scoring_horizon_days: int
     pricing: PricingMetadata
     generator: GeneratorParams
+    backend: BackendSettings
 
 
 def load_config(path: Path = DEFAULT_CONFIG_PATH) -> Config:
@@ -37,6 +46,7 @@ def load_config(path: Path = DEFAULT_CONFIG_PATH) -> Config:
 
     run = raw["run"]
     pricing = raw["pricing"]
+    backend_raw = raw.get("backend", {})
     tiers: dict[Tier, TierPrice] = {}
     for tier_name, values in raw["tiers"].items():
         tiers[Tier(tier_name)] = TierPrice(
@@ -73,4 +83,10 @@ def load_config(path: Path = DEFAULT_CONFIG_PATH) -> Config:
             version=str(pricing["version"]),
         ),
         generator=generator,
+        backend=BackendSettings(
+            endpoint_url=str(backend_raw.get("endpoint_url", "http://localhost:9000")),
+            hot_bucket=str(backend_raw.get("hot_bucket", "hot")),
+            cold_bucket=str(backend_raw.get("cold_bucket", "cold")),
+            region=str(backend_raw.get("region", "us-east-1")),
+        ),
     )
