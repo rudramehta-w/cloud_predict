@@ -125,5 +125,6 @@ injection, and live Silo/dashboard flows (live tests skip cleanly when Silo is a
 ## Project documents
 
 - Design spec: [.scratch/v1/spec.md](.scratch/v1/spec.md) · v1.1 tickets: [.scratch/v1-1/issues](.scratch/v1-1/issues)
+- Evaluation III deck: [Cloud_Predict_Evaluation_III.pptx](docs/presentation/Cloud_Predict_Evaluation_III.pptx) (15 slides, speaker notes included)
 - Decisions: [DECISIONS.md](DECISIONS.md) · ADRs: [docs/adr](docs/adr)
 - Glossary: [GLOSSARY.md](GLOSSARY.md) · Run logs: [RUNLOG.md](RUNLOG.md), [RUNLOG-v1.1.md](RUNLOG-v1.1.md)
