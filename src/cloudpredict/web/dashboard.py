@@ -28,7 +28,6 @@ from cloudpredict.infrastructure.silo_storage import SiloStorage
 from cloudpredict.infrastructure.sqlite_repository import SqliteRepository
 
 GIB = Decimal(1024**3)
-TEMPLATE_TOKENS = ("__HOT__", "__COLD__", "__ENDPOINT__", "__DELTA__")
 
 
 def _storage(config: Config) -> SiloStorage:
@@ -53,11 +52,10 @@ def render_dashboard(config: Config) -> str:
     delta = (
         config.tiers[Tier.HOT].storage_per_gb_month - config.tiers[Tier.COLD].storage_per_gb_month
     )
-    tokens = (config.backend.hot_bucket, config.backend.cold_bucket, config.backend.endpoint_url)
     return (
-        DASHBOARD_TEMPLATE.replace("__HOT__", tokens[0])
-        .replace("__COLD__", tokens[1])
-        .replace("__ENDPOINT__", tokens[2])
+        DASHBOARD_TEMPLATE.replace("__HOT__", config.backend.hot_bucket)
+        .replace("__COLD__", config.backend.cold_bucket)
+        .replace("__ENDPOINT__", config.backend.endpoint_url)
         .replace("__DELTA__", str(delta))
     )
 
@@ -241,157 +239,336 @@ DASHBOARD_TEMPLATE = """<!doctype html>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>cloudPredict — control plane</title>
+<title>cloudPredict — storage thermal ledger</title>
 <style>
   :root {
-    --bg: #080b14;
-    --panel: rgba(255, 255, 255, 0.055);
-    --line: rgba(255, 255, 255, 0.09);
-    --text: #e8ecf4;
-    --muted: #8b94a7;
-    --accent: #6ee7ff;
-    --accent2: #8b5cf6;
-    --good: #3ddc97;
-    --warn: #ffb454;
+    --paper: #e9edef;
+    --surface: #f5f7f8;
+    --ink: #0f1518;
+    --ink-2: #3f4d55;
+    --muted: #55666f;
+    --rule: #c6d0d6;
+    --hot: #b8431f;
+    --hot-tint: #f1dcd2;
+    --cold: #0f6f8c;
+    --cold-tint: #d8e8ee;
+    --good: #2f6b46;
+    --serif: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", Palatino, Georgia, serif;
+    --sans: -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    --mono: ui-monospace, "SF Mono", "SFMono-Regular", Menlo, Consolas, monospace;
   }
   * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
   body {
-    margin: 0; min-height: 100vh; color: var(--text);
-    font-family: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-    background:
-      radial-gradient(1100px 600px at 12% -8%, rgba(110, 231, 255, 0.16), transparent 60%),
-      radial-gradient(900px 520px at 92% 4%, rgba(139, 92, 246, 0.18), transparent 55%),
-      var(--bg);
-    padding: 28px 32px 64px;
+    margin: 0; background: var(--paper); color: var(--ink);
+    font-family: var(--sans); font-size: 15px; line-height: 1.5;
   }
-  .wrap { max-width: 1240px; margin: 0 auto; }
-  header { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
-  .brand { display: flex; align-items: center; gap: 12px; }
-  .logo {
-    width: 38px; height: 38px; border-radius: 11px;
-    background: linear-gradient(135deg, var(--accent), var(--accent2));
-    box-shadow: 0 8px 24px rgba(110, 231, 255, 0.28);
+  .wrap { max-width: 1180px; margin: 0 auto; padding: 38px 40px 72px; }
+
+  /* masthead */
+  .masthead {
+    display: flex; align-items: flex-end; justify-content: space-between;
+    gap: 24px; border-bottom: 2px solid var(--ink); padding-bottom: 14px;
   }
-  h1 { font-size: 21px; margin: 0; letter-spacing: 0.2px; }
-  .sub { color: var(--muted); font-size: 13px; margin-top: 3px; }
-  .pill {
-    display: inline-flex; align-items: center; gap: 8px; font-size: 12px; color: var(--muted);
-    border: 1px solid var(--line); padding: 6px 12px; border-radius: 999px;
-    background: rgba(255, 255, 255, 0.03);
+  .kicker {
+    font-family: var(--mono); font-size: 10px; letter-spacing: 0.18em;
+    text-transform: uppercase; color: var(--muted);
   }
-  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--good);
-    box-shadow: 0 0 0 0 rgba(61, 220, 151, 0.5); animation: pulse 2.2s infinite; }
-  @keyframes pulse {
-    0% { box-shadow: 0 0 0 0 rgba(61, 220, 151, 0.45); }
-    70% { box-shadow: 0 0 0 9px rgba(61, 220, 151, 0); }
-    100% { box-shadow: 0 0 0 0 rgba(61, 220, 151, 0); }
+  h1 {
+    font-family: var(--serif); font-weight: 500; margin: 7px 0 0;
+    font-size: clamp(27px, 3vw, 35px); line-height: 1.08; letter-spacing: -0.012em;
   }
-  .grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-top: 26px; }
-  .card {
-    background: var(--panel); border: 1px solid var(--line); border-radius: 16px;
-    padding: 18px 20px; backdrop-filter: blur(10px);
+  h1 em { font-style: italic; color: var(--cold); }
+  .mast-right {
+    text-align: right; font-family: var(--mono); font-size: 11px;
+    color: var(--ink-2); line-height: 1.8;
   }
-  .card .label { color: var(--muted); font-size: 12px; letter-spacing: 0.6px; text-transform: uppercase; }
-  .card .value { font-size: 30px; font-weight: 650; margin-top: 8px; font-variant-numeric: tabular-nums; }
-  .card .unit { font-size: 14px; color: var(--muted); margin-left: 4px; }
-  .card .delta { color: var(--muted); font-size: 12px; margin-top: 6px; }
-  .actions { display: flex; gap: 14px; margin-top: 22px; flex-wrap: wrap; }
-  button {
-    appearance: none; border: 0; cursor: pointer; color: #071018; font-weight: 650;
-    font-size: 14px; padding: 13px 22px; border-radius: 12px; letter-spacing: 0.2px;
-    background: linear-gradient(135deg, var(--accent), #a5f3fc);
-    transition: transform 0.12s ease, box-shadow 0.12s ease, opacity 0.2s ease;
-    box-shadow: 0 10px 26px rgba(110, 231, 255, 0.2);
+  .status { display: inline-flex; align-items: center; gap: 7px; justify-content: flex-end; }
+  .dot {
+    width: 7px; height: 7px; border-radius: 50%; background: var(--good);
+    animation: pulse 2.4s ease-in-out infinite;
   }
-  button.secondary { background: linear-gradient(135deg, #a78bfa, var(--accent2)); color: #f5f3ff; }
-  button.primary { background: linear-gradient(135deg, #34d399, #10b981); color: #04150e; }
-  button:hover:not(:disabled) { transform: translateY(-1px); }
-  button:disabled { opacity: 0.42; cursor: not-allowed; }
-  .progress-shell {
-    margin-top: 18px; height: 10px; border-radius: 999px; overflow: hidden;
-    background: rgba(255, 255, 255, 0.07); border: 1px solid var(--line); display: none;
+  @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.25; } }
+
+  /* thermal band signature */
+  .band { margin-top: 26px; border: 1px solid var(--ink); background: var(--surface); }
+  .band-head {
+    display: flex; justify-content: space-between; align-items: baseline;
+    padding: 9px 14px; border-bottom: 1px solid var(--rule);
+    font-family: var(--mono); font-size: 10px; letter-spacing: 0.16em;
+    text-transform: uppercase; color: var(--muted);
   }
-  .progress-shell.on { display: block; }
-  .progress-bar {
-    height: 100%; width: 0%; border-radius: 999px;
-    background: linear-gradient(90deg, var(--accent), var(--accent2));
-    transition: width 0.25s ease;
+  .band-head strong { color: var(--cold); font-weight: 600; letter-spacing: 0.08em; }
+  .track {
+    position: relative; height: 34px; margin: 12px 14px 0;
+    background: var(--paper); border: 1px solid var(--rule); overflow: hidden;
   }
-  .cols { display: grid; grid-template-columns: 1.35fr 1fr; gap: 18px; margin-top: 24px; }
-  section h2 { font-size: 15px; margin: 0 0 10px; letter-spacing: 0.3px; }
-  table { width: 100%; border-collapse: collapse; font-size: 13px; }
-  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); }
-  th { color: var(--muted); font-weight: 550; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; }
-  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
-  tbody tr.rec { background: rgba(61, 220, 151, 0.07); }
-  tbody tr.stay { color: #93a0b5; }
-  .tag { font-size: 11px; padding: 3px 9px; border-radius: 999px; border: 1px solid var(--line); }
-  .tag.move { color: var(--good); border-color: rgba(61, 220, 151, 0.4); }
-  .tag.keep { color: var(--muted); }
-  .terminal {
-    margin-top: 18px; border: 1px solid var(--line); border-radius: 14px;
-    background: rgba(2, 6, 12, 0.6); padding: 14px 16px; font-family: "SFMono-Regular", ui-monospace, monospace;
-    font-size: 12px; color: #b9c4d6; height: 130px; overflow: auto; white-space: pre-wrap;
+  .track::after {
+    content: ""; position: absolute; inset: 0; pointer-events: none;
+    background-image: repeating-linear-gradient(90deg, transparent 0 24.8%, var(--rule) 24.8% 25%);
+    opacity: 0.7;
   }
-  .empty { color: var(--muted); font-size: 13px; padding: 12px 0; }
-  .note { color: var(--muted); font-size: 12px; margin-top: 8px; }
+  .seg {
+    position: absolute; top: 0; bottom: 0; width: 100%;
+    transition: transform 0.55s cubic-bezier(0.2, 0.7, 0.2, 1);
+  }
+  .seg.hot { left: 0; transform-origin: left center; background: linear-gradient(90deg, var(--hot), #d4673f); }
+  .seg.cold { right: 0; transform-origin: right center; background: linear-gradient(90deg, #16809f, var(--cold)); }
+  .band-foot {
+    display: flex; justify-content: space-between; gap: 16px;
+    padding: 9px 14px 12px; font-family: var(--mono); font-size: 11px; color: var(--muted);
+  }
+  .band-foot b { color: var(--ink); font-weight: 600; }
+  .band-foot .cold-side b { color: var(--cold); }
+
+  /* readings strip */
+  .strip {
+    display: grid; grid-template-columns: repeat(4, 1fr);
+    border: 1px solid var(--ink); border-top: 0; background: var(--surface);
+  }
+  .kpi { padding: 14px 16px 16px; border-left: 1px solid var(--rule); }
+  .kpi:first-child { border-left: 0; }
+  .kpi .label {
+    font-family: var(--mono); font-size: 9.5px; letter-spacing: 0.16em;
+    text-transform: uppercase; color: var(--muted);
+  }
+  .kpi .value {
+    margin-top: 5px; font-family: var(--mono); font-weight: 500;
+    font-size: clamp(23px, 2.5vw, 32px); letter-spacing: -0.02em;
+    font-variant-numeric: tabular-nums;
+  }
+  .kpi .value .unit { font-size: 11px; letter-spacing: 0.05em; color: var(--muted); margin-left: 5px; }
+  .kpi .sub { margin-top: 3px; font-family: var(--mono); font-size: 10.5px; color: var(--muted); }
+
+  /* command dock */
+  .dock { display: flex; flex-wrap: wrap; align-items: stretch; border: 1px solid var(--ink); border-top: 0; }
+  .btn {
+    appearance: none; border: 0; border-right: 1px solid var(--rule);
+    background: transparent; color: var(--ink); cursor: pointer;
+    font-family: var(--mono); font-size: 11px; letter-spacing: 0.13em;
+    text-transform: uppercase; padding: 16px 22px; min-height: 46px;
+    transition: background 0.16s ease, color 0.16s ease;
+  }
+  .btn:hover:not(:disabled) { background: var(--ink); color: var(--paper); }
+  .btn:focus-visible { outline: 2px solid var(--cold); outline-offset: -4px; }
+  .btn:disabled { color: var(--muted); cursor: not-allowed; }
+  .btn.primary { background: var(--ink); color: var(--paper); }
+  .btn.primary:hover:not(:disabled) { background: var(--cold); color: #ffffff; }
+  .dock .spacer {
+    margin-left: auto; display: flex; align-items: center; padding: 0 14px;
+    font-family: var(--mono); font-size: 10px; color: var(--muted); letter-spacing: 0.06em;
+  }
+
+  /* progress */
+  .progress { display: none; align-items: center; gap: 12px; margin-top: 14px; }
+  .progress.on { display: flex; }
+  .progress-track { flex: 1; height: 3px; background: var(--rule); position: relative; overflow: hidden; }
+  .progress-fill {
+    position: absolute; inset: 0; background: var(--cold);
+    transform: scaleX(0); transform-origin: left center;
+    transition: transform 0.25s ease;
+  }
+  .progress-label { font-family: var(--mono); font-size: 10px; color: var(--muted); min-width: 38px; text-align: right; }
+
+  /* journal */
+  .journal { margin-top: 16px; border: 1px solid var(--ink); background: var(--surface); }
+  .journal-head {
+    display: flex; justify-content: space-between; padding: 8px 14px;
+    border-bottom: 1px solid var(--rule); font-family: var(--mono);
+    font-size: 9.5px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--muted);
+  }
+  .journal-body {
+    max-height: 136px; overflow: auto; padding: 10px 14px 12px;
+    font-family: var(--mono); font-size: 11.5px; line-height: 1.8;
+    color: var(--ink-2); white-space: pre-wrap;
+  }
+
+  /* columns */
+  .columns {
+    display: grid; grid-template-columns: minmax(0, 1.55fr) minmax(0, 1fr);
+    margin-top: 32px; border-top: 2px solid var(--ink);
+  }
+  .col { padding: 18px 22px 8px 0; min-width: 0; }
+  .col + .col { border-left: 1px solid var(--rule); padding-left: 22px; padding-right: 0; }
+  .sec-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 8px; }
+  h2 { font-family: var(--serif); font-weight: 500; font-size: 21px; margin: 0; letter-spacing: -0.01em; }
+  .sec-note {
+    font-family: var(--mono); font-size: 9.5px; letter-spacing: 0.12em;
+    text-transform: uppercase; color: var(--muted); text-align: right;
+  }
+
+  /* tables */
+  .table-scroll { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; }
+  th {
+    font-family: var(--mono); font-size: 9.5px; letter-spacing: 0.14em;
+    text-transform: uppercase; color: var(--muted); font-weight: 500;
+    text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--ink);
+    white-space: nowrap;
+  }
+  td { padding: 9px 10px; border-bottom: 1px solid var(--rule); font-size: 13px; vertical-align: top; }
+  td.num, th.num { text-align: right; font-family: var(--mono); font-variant-numeric: tabular-nums; }
+  tbody tr:hover { background: rgba(15, 21, 24, 0.035); }
+  tr.rec { background: linear-gradient(90deg, var(--cold-tint), transparent 62%); }
+  .key { font-family: var(--mono); font-size: 11.5px; color: var(--ink-2); word-break: break-all; }
+  .stamp {
+    display: inline-block; padding: 2px 6px; border: 1px solid currentColor;
+    font-family: var(--mono); font-size: 9px; letter-spacing: 0.12em; text-transform: uppercase;
+  }
+  .stamp.move { color: var(--cold); }
+  .stamp.keep { color: var(--muted); }
+  .stamp.done { color: var(--good); }
+  tr.done td { color: var(--muted); }
+  tr.done .key { text-decoration: line-through; text-decoration-thickness: 1px; }
+  tr.done .stamp { opacity: 0.85; }
+  .empty {
+    padding: 18px 10px; color: var(--muted); font-style: italic;
+    font-family: var(--serif); font-size: 14.5px;
+  }
+
+  .foot {
+    margin-top: 34px; border-top: 1px solid var(--rule); padding-top: 12px;
+    display: flex; justify-content: space-between; gap: 16px;
+    font-family: var(--mono); font-size: 10px; color: var(--muted); letter-spacing: 0.05em;
+  }
+
+  @media (max-width: 980px) {
+    .wrap { padding: 26px 22px 56px; }
+    .masthead { flex-direction: column; align-items: flex-start; gap: 10px; }
+    .mast-right { text-align: left; }
+    .strip { grid-template-columns: repeat(2, 1fr); }
+    .kpi { border-top: 1px solid var(--rule); }
+    .kpi:nth-child(3) { border-left: 0; }
+    .columns { grid-template-columns: 1fr; }
+    .col { padding-right: 0; }
+    .col + .col { border-left: 0; border-top: 1px solid var(--rule); margin-top: 18px; padding-left: 0; }
+  }
+  @media (max-width: 620px) {
+    .strip { grid-template-columns: 1fr; }
+    .kpi { border-left: 0; }
+    .dock { flex-direction: column; }
+    .btn { width: 100%; border-right: 0; border-bottom: 1px solid var(--rule); text-align: left; }
+    .dock .spacer { padding: 10px 14px; }
+    .foot { flex-direction: column; gap: 4px; }
+    th, td { padding: 8px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation: none !important; transition: none !important; }
+  }
 </style>
 </head>
 <body>
 <div class="wrap">
-  <header>
-    <div class="brand">
-      <div class="logo"></div>
-      <div>
-        <h1>cloudPredict</h1>
-        <div class="sub">EV-driven storage tiering · <span id="endpoint">__ENDPOINT__</span></div>
-      </div>
+  <header class="masthead">
+    <div>
+      <div class="kicker">cloudPredict / storage operations · __HOT__ → __COLD__</div>
+      <h1>The <em>thermal</em> ledger</h1>
     </div>
-    <span class="pill"><span class="dot"></span><span id="live">live</span></span>
+    <div class="mast-right">
+      <div class="status"><span class="dot"></span><span id="live">live</span></div>
+      <div id="endpoint">__ENDPOINT__</div>
+      <div>evaluation horizon 30d · margin $0.00</div>
+    </div>
   </header>
 
-  <div class="grid">
-    <div class="card"><div class="label">Hot bucket</div>
-      <div class="value"><span id="hot-objects">–</span><span class="unit">objects</span></div>
-      <div class="delta"><span id="hot-gb">–</span> GB stored</div></div>
-    <div class="card"><div class="label">Cold bucket</div>
-      <div class="value"><span id="cold-objects">–</span><span class="unit">objects</span></div>
-      <div class="delta"><span id="cold-gb">–</span> GB stored</div></div>
-    <div class="card"><div class="label">Savings</div>
-      <div class="value">$<span id="savings">–</span><span class="unit">/mo</span></div>
-      <div class="delta">$<span id="savings-year">–</span>/yr · Δ $<span id="delta">__DELTA__</span>/GB-mo</div></div>
-    <div class="card"><div class="label">Migrations</div>
-      <div class="value"><span id="moved-count">–</span><span class="unit">moved</span></div>
-      <div class="delta">copy → verify → delete</div></div>
+  <section class="band" aria-label="Thermal band: share of bytes in cold storage">
+    <div class="band-head">
+      <span>Thermal band · byte mass</span>
+      <strong id="cold-share">cold 0%</strong>
+    </div>
+    <div class="track">
+      <div class="seg hot" id="seg-hot"></div>
+      <div class="seg cold" id="seg-cold"></div>
+    </div>
+    <div class="band-foot">
+      <span>HOT <b id="band-hot">0 obj · 0.00 GB</b></span>
+      <span class="cold-side">COLD <b id="band-cold">0 obj · 0.00 GB</b></span>
+    </div>
+  </section>
+
+  <section class="strip" aria-label="Key readings">
+    <div class="kpi">
+      <div class="label">Hot bucket</div>
+      <div class="value"><span id="hot-objects">–</span><span class="unit">obj</span></div>
+      <div class="sub"><span id="hot-gb">–</span> GB resident</div>
+    </div>
+    <div class="kpi">
+      <div class="label">Cold bucket</div>
+      <div class="value"><span id="cold-objects">–</span><span class="unit">obj</span></div>
+      <div class="sub"><span id="cold-gb">–</span> GB archived</div>
+    </div>
+    <div class="kpi">
+      <div class="label">Savings booked</div>
+      <div class="value">$<span id="savings">0.0000</span></div>
+      <div class="sub">$<span id="savings-year">0.00</span> /yr</div>
+    </div>
+    <div class="kpi">
+      <div class="label">Objects moved</div>
+      <div class="value"><span id="moved-count">0</span></div>
+      <div class="sub">copy → verify → delete</div>
+    </div>
+  </section>
+
+  <div class="dock">
+    <button id="btn-seed" class="btn" type="button">Seed hot bucket</button>
+    <button id="btn-score" class="btn" type="button">Score objects</button>
+    <button id="btn-apply" class="btn primary" type="button">Apply migrations</button>
+    <span class="spacer">← seed, score, apply</span>
   </div>
 
-  <div class="actions">
-    <button id="btn-seed" class="secondary">Seed hot bucket</button>
-    <button id="btn-score">Score objects</button>
-    <button id="btn-apply" class="primary">Apply migrations</button>
+  <div class="progress" id="progress-shell" role="status" aria-live="polite">
+    <div class="progress-track"><div class="progress-fill" id="progress-bar"></div></div>
+    <span class="progress-label" id="progress-label">0%</span>
   </div>
-  <div class="progress-shell" id="progress-shell"><div class="progress-bar" id="progress-bar"></div></div>
-  <div class="terminal" id="log">Ready. Seed the hot bucket, score, then apply.</div>
 
-  <div class="cols">
-    <section class="card">
-      <h2>Recommendations <span class="note" id="score-summary"></span></h2>
-      <table>
-        <thead><tr>
-          <th>Object</th><th class="num">MB</th><th>Tier</th><th class="num">P(access)</th>
-          <th class="num">EV</th><th>Action</th>
-        </tr></thead>
-        <tbody id="recs"><tr><td colspan="6" class="empty">Score to see recommendations.</td></tr></tbody>
-      </table>
+  <section class="journal" aria-label="Run journal">
+    <div class="journal-head"><span>Run journal</span><span id="journal-state">ready</span></div>
+    <div class="journal-body" id="log" aria-live="polite">Ready. Seed the hot bucket, score, then apply.</div>
+  </section>
+
+  <div class="columns">
+    <section class="col" aria-labelledby="recs-title">
+      <div class="sec-head">
+        <h2 id="recs-title">Recommendations</h2>
+        <span class="sec-note" id="score-summary">not scored</span>
+      </div>
+      <div class="table-scroll">
+        <table>
+          <thead><tr>
+            <th scope="col">Object</th>
+            <th scope="col" class="num">MB</th>
+            <th scope="col">Tier</th>
+            <th scope="col" class="num">P(access)</th>
+            <th scope="col" class="num">EV</th>
+            <th scope="col">Action</th>
+          </tr></thead>
+          <tbody id="recs"><tr><td colspan="6" class="empty">Nothing scored yet. Run “Score objects”.</td></tr></tbody>
+        </table>
+      </div>
     </section>
-    <section class="card">
-      <h2>Migration ledger</h2>
-      <table>
-        <thead><tr><th>Object</th><th class="num">MB</th><th class="num">Saved</th><th>When</th></tr></thead>
-        <tbody id="ledger"><tr><td colspan="4" class="empty">No migrations yet.</td></tr></tbody>
-      </table>
+    <section class="col" aria-labelledby="ledger-title">
+      <div class="sec-head">
+        <h2 id="ledger-title">Migration ledger</h2>
+        <span class="sec-note" id="ledger-count">0 moved</span>
+      </div>
+      <div class="table-scroll">
+        <table>
+          <thead><tr>
+            <th scope="col">Object</th>
+            <th scope="col" class="num">MB</th>
+            <th scope="col" class="num">Saved</th>
+            <th scope="col">When</th>
+          </tr></thead>
+          <tbody id="ledger"><tr><td colspan="4" class="empty">No migrations booked.</td></tr></tbody>
+        </table>
+      </div>
     </section>
   </div>
+
+  <footer class="foot">
+    <span>Δ __DELTA__ USD / GB-month · AWS us-east-1 public pricing, captured 2026-10-24</span>
+    <span>advise → verify → move</span>
+  </footer>
 </div>
 
 <script>
@@ -404,50 +581,74 @@ const UI = {
   ledger: document.getElementById('ledger'),
   progressShell: document.getElementById('progress-shell'),
   progressBar: document.getElementById('progress-bar'),
+  progressLabel: document.getElementById('progress-label'),
   scoreSummary: document.getElementById('score-summary'),
+  ledgerCount: document.getElementById('ledger-count'),
+  journalState: document.getElementById('journal-state'),
 };
 let busy = false;
+const applied = new Set();
 
+function stamp() {
+  return new Date().toLocaleTimeString([], { hour12: false });
+}
 function log(message) {
-  UI.log.textContent += '\\n' + message;
+  UI.log.textContent += '\\n' + stamp() + '  ' + message;
   UI.log.scrollTop = UI.log.scrollHeight;
 }
 function setBusy(value, label) {
   busy = value;
   for (const button of [UI.seed, UI.score, UI.apply]) button.disabled = value;
-  document.getElementById('live').textContent = label || (value ? 'working…' : 'live');
+  document.getElementById('live').textContent = label || (value ? 'working' : 'live');
+  UI.journalState.textContent = value ? 'running' : 'ready';
 }
 function progress(percent) {
   UI.progressShell.classList.add('on');
-  UI.progressBar.style.width = Math.min(100, Math.max(0, percent)) + '%';
-  if (percent >= 100) setTimeout(() => UI.progressShell.classList.remove('on'), 1200);
+  UI.progressBar.style.transform = 'scaleX(' + Math.min(100, Math.max(0, percent)) / 100 + ')';
+  UI.progressLabel.textContent = Math.round(percent) + '%';
+  if (percent >= 100) setTimeout(() => UI.progressShell.classList.remove('on'), 1400);
+}
+function setText(id, value) {
+  document.getElementById(id).textContent = value;
 }
 async function refresh() {
   try {
     const response = await fetch('/api/status');
     const status = await response.json();
-    document.getElementById('hot-objects').textContent = status.hot.objects;
-    document.getElementById('hot-gb').textContent = status.hot.gb.toFixed(2);
-    document.getElementById('cold-objects').textContent = status.cold.objects;
-    document.getElementById('cold-gb').textContent = status.cold.gb.toFixed(2);
-    document.getElementById('savings').textContent = Number(status.savings_monthly_usd).toFixed(4);
-    document.getElementById('savings-year').textContent = Number(status.savings_annual_usd).toFixed(2);
-    document.getElementById('moved-count').textContent = status.moved_total;
+    setText('hot-objects', status.hot.objects);
+    setText('hot-gb', status.hot.gb.toFixed(2));
+    setText('cold-objects', status.cold.objects);
+    setText('cold-gb', status.cold.gb.toFixed(2));
+    setText('savings', Number(status.savings_monthly_usd).toFixed(4));
+    setText('savings-year', Number(status.savings_annual_usd).toFixed(2));
+    setText('moved-count', status.moved_total);
+
+    const total = status.hot.gb + status.cold.gb;
+    const share = total > 0 ? status.cold.gb / total : 0;
+    document.getElementById('seg-hot').style.transform = 'scaleX(' + (1 - share) + ')';
+    document.getElementById('seg-cold').style.transform = 'scaleX(' + share + ')';
+    setText('cold-share', 'cold ' + Math.round(share * 100) + '%');
+    setText('band-hot', status.hot.objects + ' obj · ' + status.hot.gb.toFixed(2) + ' GB');
+    setText('band-cold', status.cold.objects + ' obj · ' + status.cold.gb.toFixed(2) + ' GB');
+    UI.ledgerCount.textContent = status.moved_total + ' moved';
     renderLedger(status.ledger);
-  } catch (error) { document.getElementById('live').textContent = 'offline'; }
+    if (!busy) UI.journalState.textContent = status.busy ? 'running' : 'ready';
+  } catch (error) {
+    document.getElementById('live').textContent = 'offline';
+  }
 }
 function renderLedger(rows) {
   if (!rows.length) {
-    UI.ledger.innerHTML = '<tr><td colspan="4" class="empty">No migrations yet.</td></tr>';
+    UI.ledger.innerHTML = '<tr><td colspan="4" class="empty">No migrations booked.</td></tr>';
     return;
   }
   UI.ledger.innerHTML = rows.map(row => `<tr>
-    <td>${row.key}</td><td class="num">${row.size_mb}</td>
+    <td class="key">${row.key}</td><td class="num">${row.size_mb}</td>
     <td class="num">$${row.savings}</td>
     <td>${new Date(row.moved_at).toLocaleTimeString()}</td></tr>`).join('');
 }
 async function seed() {
-  setBusy(true, 'seeding…'); log('Seeding real files into the hot bucket…');
+  setBusy(true, 'seeding'); log('Seeding real files into the hot bucket…');
   try {
     const response = await fetch('/api/seed', {method: 'POST'});
     if (!response.ok) { log('Seed failed: ' + (await response.text())); return; }
@@ -456,7 +657,7 @@ async function seed() {
   } finally { setBusy(false); refresh(); }
 }
 async function score() {
-  setBusy(true, 'scoring…'); log('Scoring live Objects with the EV model…');
+  setBusy(true, 'scoring'); log('Scoring live Objects with the EV model…');
   try {
     const response = await fetch('/api/score', {method: 'POST'});
     const result = await response.json();
@@ -464,17 +665,19 @@ async function score() {
     if (!result.recommendations.length) {
       UI.recs.innerHTML = '<tr><td colspan="6" class="empty">Hot bucket is empty. Seed first.</td></tr>';
     } else {
-      UI.recs.innerHTML = result.recommendations.map(row => `<tr class="${row.recommended ? 'rec' : 'stay'}">
-        <td>${row.key}</td><td class="num">${row.size_mb}</td><td>${row.tier}→${row.to_tier}</td>
+      UI.recs.innerHTML = result.recommendations.map(row => `<tr class="${row.recommended ? 'rec' : ''}">
+        <td class="key">${row.key}</td><td class="num">${row.size_mb}</td>
+        <td>${row.tier}→${row.to_tier}</td>
         <td class="num">${row.probability.toFixed(4)}</td><td class="num">${row.ev.toFixed(4)}</td>
-        <td><span class="tag ${row.recommended ? 'move' : 'keep'}">${row.recommended ? 'move' : 'stay'}</span></td>
+        <td><span class="stamp ${row.recommended ? 'move' : 'keep'}">${row.recommended ? 'move' : 'stay'}</span></td>
       </tr>`).join('');
     }
     log(`Scored ${result.scanned} objects with ${result.estimator}: ${result.recommended} recommendations.`);
   } finally { setBusy(false); }
 }
 async function apply() {
-  setBusy(true, 'applying…'); log('Applying migrations: copy → verify → delete…');
+  setBusy(true, 'applying'); log('Applying migrations: copy → verify → delete…');
+  applied.clear();
   progress(0);
   try {
     const response = await fetch('/api/apply', {method: 'POST'});
@@ -502,13 +705,25 @@ function handleEvent(chunk) {
   if (!data) return;
   const payload = JSON.parse(data);
   if (name === 'progress') {
+    if (payload.status === 'moved') applied.add(payload.key);
     log(payload.message);
     progress(payload.total ? (payload.index / payload.total) * 100 : 0);
   } else if (name === 'done') {
     progress(100);
+    markApplied();
+    UI.scoreSummary.textContent = `${payload.moved} applied · ${payload.estimator}`;
     log(`Done: ${payload.moved} moved, ${payload.skipped} skipped, ${payload.failed} failed, $${payload.savings_usd} saved.`);
   } else if (name === 'error') {
     log('Error: ' + payload.message);
+  }
+}
+function markApplied() {
+  for (const row of UI.recs.querySelectorAll('tr')) {
+    const keyCell = row.querySelector('.key');
+    if (!keyCell || !applied.has(keyCell.textContent)) continue;
+    row.classList.add('done');
+    const stampEl = row.querySelector('.stamp');
+    if (stampEl) { stampEl.className = 'stamp done'; stampEl.textContent = 'moved'; }
   }
 }
 UI.seed.addEventListener('click', seed);

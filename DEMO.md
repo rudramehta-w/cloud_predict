@@ -35,8 +35,9 @@ Expect: `Uvicorn running on http://127.0.0.1:8000`.
 
 Browse to <http://localhost:8000>.
 
-Expect: dark control panel, live pill (green), four stat cards. Fresh state shows
-**Hot 0 objects / Cold 0 objects / $0.0000/mo / 0 moved**.
+Expect: a light "thermal ledger" console — serif masthead, a full-width thermal band
+(ember = hot bytes, glacier = cold bytes), four readings, and a three-button command dock.
+Fresh state shows **Hot 0 objects / Cold 0 objects / $0.0000 / 0 moved**, with the band empty.
 
 ## 4. Click "Seed hot bucket"
 
@@ -53,8 +54,9 @@ Expect, after ~10 seconds:
 Expect, after ~2 seconds:
 
 - summary chip: `30/30 recommended · xgboost`
-- recommendation table fills with 30 green rows: object, MB, `HOT→COLD`, P(access),
-  EV, `move`
+- recommendation table fills with 30 ruled rows: object, MB, `HOT→COLD`, P(access),
+  EV, and a `MOVE` stamp
+- the thermal band stays fully ember (everything is still hot)
 - P(access) ranges from the smoothed prior (~0.13) up to ~0.31 for recently read Objects
 
 ## 6. Click "Apply migrations"
@@ -67,6 +69,8 @@ Expect:
 - final line: `Done: 30 moved, 0 skipped, 0 failed, $0.03 saved.`
 - Hot bucket card: **0 objects, 0.00 GB**
 - Cold bucket card: **30 objects, 1.68 GB**
+- the thermal band flips to full glacier: **COLD 100%**
+- every recommendation row is struck through and restamped **MOVED**
 - Savings card: **$0.0319/mo**, **$0.38/yr**, Δ **$0.019/GB-mo**
 - Migrations card: **30 moved**
 - ledger table shows the most recent moves with timestamps and per-Object savings
