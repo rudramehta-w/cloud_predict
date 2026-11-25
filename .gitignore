@@ -34,3 +34,26 @@ graphify-out/
 !.github/workflows/
 .qoder
 .qodo
+
+# Report and academic document artifacts
+*.docx
+*.pdf
+!docs/presentation/Cloud_Predict_Evaluation_III.pdf
+report-final-build/
+assets/
+.images
+=1
+
+# Report generation & data formatting scripts
+generate_report*.py
+generate_diagrams*.py
+make_report_data.py
+report_data*.py
+update_generator.py
+
+# Presentation working images
+docs/presentation/*.png
+
+# Local agent metadata
+.agents/
+skills/

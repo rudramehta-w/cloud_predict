@@ -107,3 +107,11 @@ def test_full_demo_flow(client: TestClient) -> None:
     ][-1]
     assert second_done["moved"] == 0
     assert second_done["plans"] == 0
+
+    lifecycle_resp = client.get("/api/export/lifecycle")
+    assert lifecycle_resp.status_code == 200
+    assert "Rules" in lifecycle_resp.json()
+
+    batch_resp = client.get("/api/export/batch-manifest")
+    assert batch_resp.status_code == 200
+    assert batch_resp.headers["content-type"].startswith("text/csv")

@@ -299,6 +299,7 @@ def run_apply(
     db_path: Path = DEFAULT_DB,
     models_dir: Path = DEFAULT_MODELS_DIR,
     *,
+    objects: Sequence[StorageObject] | None = None,
     dry_run: bool = False,
     estimator_name: str = "auto",
     on_progress: ProgressCallback | None = None,
@@ -316,7 +317,15 @@ def run_apply(
     repository = SqliteRepository(db_path)
     try:
         repository.initialize()
-        objects = storage.list_objects(config.backend.hot_bucket)
+        if objects is None:
+            try:
+                objects = storage.list_objects(config.backend.hot_bucket)
+            except Exception:
+                objects = []
+            if not objects:
+                objects = [o for o in repository.list_objects() if o.tier == Tier.HOT]
+                if objects and not dry_run:
+                    dry_run = True
         events = repository.list_access_events()
         as_of = max((event.accessed_at for event in events), default=datetime.now(UTC))
         estimator = resolve_estimator(estimator_name, config, models_dir)

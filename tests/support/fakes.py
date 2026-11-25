@@ -81,6 +81,17 @@ class InMemoryRepository:
         ]
         return sorted(matching, key=lambda decision: decision.expected_value, reverse=True)
 
+    def list_latest_decisions(self) -> list[TierDecision]:
+        if not self._decisions:
+            return []
+        latest_as_of = max(as_of for _, _, as_of in self._decisions)
+        matching = [
+            decision
+            for (object_id, decision_estimator, decision_as_of), decision in self._decisions.items()
+            if decision_as_of == latest_as_of
+        ]
+        return sorted(matching, key=lambda decision: decision.expected_value, reverse=True)
+
     def append_migration(self, record: MigrationRecord) -> None:
         self._migrations.append(record)
 

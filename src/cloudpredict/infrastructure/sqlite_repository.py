@@ -196,6 +196,16 @@ class SqliteRepository:
             for row in cursor.fetchall()
         ]
 
+    def list_latest_decisions(self) -> list[TierDecision]:
+        cursor = self._connection.execute(
+            "SELECT as_of, estimator FROM tier_decisions ORDER BY as_of DESC LIMIT 1"
+        )
+        row = cursor.fetchone()
+        if not row:
+            return []
+        as_of = datetime.fromisoformat(row[0])
+        return self.list_decisions(row[1], as_of)
+
     def append_migration(self, record: MigrationRecord) -> None:
         with self._connection:
             self._connection.execute(

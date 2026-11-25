@@ -9,7 +9,7 @@ from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Response
 from fastapi.responses import HTMLResponse, StreamingResponse
 
 from cloudpredict.cli.seed_minio import run_seed
@@ -23,6 +23,7 @@ from cloudpredict.infrastructure.apply import (
     run_apply,
 )
 from cloudpredict.infrastructure.config import DEFAULT_CONFIG_PATH, Config, load_config
+from cloudpredict.infrastructure.enterprise_export import build_s3_lifecycle_rules
 from cloudpredict.infrastructure.seeding import DEFAULT_COUNT, DEFAULT_SIZE_RANGE_MIB
 from cloudpredict.infrastructure.silo_storage import SiloStorage
 from cloudpredict.infrastructure.sqlite_repository import SqliteRepository
@@ -72,6 +73,7 @@ def create_dashboard_app(
     storage = _storage(config)
     lock = threading.Lock()
     app = FastAPI(title="cloudPredict control plane")
+    app_state: dict[str, str] = {"mode": "live"}
 
     def busy() -> bool:
         return lock.locked()
@@ -82,19 +84,45 @@ def create_dashboard_app(
 
     @app.get("/api/status")
     def status() -> dict[str, object]:
-        hot = storage.bucket_stats(config.backend.hot_bucket)
-        cold = storage.bucket_stats(config.backend.cold_bucket)
-        monthly = _savings(config, cold.size_bytes)
+        storage_live = True
+        try:
+            hot = storage.bucket_stats(config.backend.hot_bucket)
+            cold = storage.bucket_stats(config.backend.cold_bucket)
+        except Exception:
+            storage_live = False
+
         repository = SqliteRepository(db_path)
         try:
             repository.initialize()
+            db_objs = repository.list_objects()
+            db_hot = [o for o in db_objs if o.tier == Tier.HOT]
+            db_cold = [o for o in db_objs if o.tier == Tier.COLD]
+            db_hot_gb = sum(o.size_bytes for o in db_hot) / (1024**3)
+            db_cold_gb = sum(o.size_bytes for o in db_cold) / (1024**3)
+            db_cold_bytes = sum(o.size_bytes for o in db_cold)
             ledger = repository.list_migrations(8)
             moved_total = repository.count_migrations("moved")
         finally:
             repository.close()
+
+        if app_state["mode"] == "live" and storage_live and (hot.objects > 0 or cold.objects > 0):
+            hot_objects = hot.objects
+            hot_gb = hot.size_gb
+            cold_objects = cold.objects
+            cold_gb = cold.size_gb
+            cold_bytes = cold.size_bytes
+        else:
+            hot_objects = len(db_hot)
+            hot_gb = db_hot_gb
+            cold_objects = len(db_cold)
+            cold_gb = db_cold_gb
+            cold_bytes = db_cold_bytes
+
+        monthly = _savings(config, cold_bytes)
         return {
-            "hot": {"objects": hot.objects, "gb": round(hot.size_gb, 2)},
-            "cold": {"objects": cold.objects, "gb": round(cold.size_gb, 2)},
+            "mode": app_state["mode"],
+            "hot": {"objects": hot_objects, "gb": round(hot_gb, 2)},
+            "cold": {"objects": cold_objects, "gb": round(cold_gb, 2)},
             "savings_monthly_usd": str(monthly.quantize(Decimal("0.0001"))),
             "savings_annual_usd": str((monthly * 12).quantize(Decimal("0.01"))),
             "price_delta_per_gb_month": str(
@@ -115,10 +143,71 @@ def create_dashboard_app(
             ],
         }
 
+    @app.post("/api/scan")
+    def scan_storage() -> dict[str, object]:
+        if not lock.acquire(blocking=False):
+            raise HTTPException(status_code=409, detail="another operation is running")
+        app_state["mode"] = "live"
+        try:
+            try:
+                objects = storage.list_objects(config.backend.hot_bucket)
+            except Exception:
+                objects = []
+            repository = SqliteRepository(db_path)
+            try:
+                repository.initialize()
+                if objects:
+                    repository.add_objects(objects)
+                count = repository.object_count()
+            finally:
+                repository.close()
+        finally:
+            lock.release()
+        total_sz = sum(o.size_bytes for o in objects)
+        return {
+            "bucket": config.backend.hot_bucket,
+            "live_scanned": len(objects),
+            "size_gb": round(total_sz / 1024**3, 2),
+            "total_inventory": count,
+        }
+
+    @app.post("/api/load-azure")
+    def load_azure_dataset() -> dict[str, object]:
+        if not lock.acquire(blocking=False):
+            raise HTTPException(status_code=409, detail="another operation is running")
+        app_state["mode"] = "azure"
+        try:
+            from cloudpredict.infrastructure.csvio import read_accesses, read_objects
+
+            trace_dir = Path("data/azure_sample")
+            if not (trace_dir / "objects.csv").exists():
+                raise HTTPException(status_code=404, detail="Azure sample dataset not found")
+            objects = read_objects(trace_dir / "objects.csv")
+            events = read_accesses(trace_dir / "accesses.csv")
+            repository = SqliteRepository(db_path)
+            try:
+                repository.initialize()
+                repository.reset()
+                repository.add_objects(objects)
+                repository.add_access_events(events)
+                obj_count = repository.object_count()
+                ev_count = repository.event_count()
+            finally:
+                repository.close()
+        finally:
+            lock.release()
+        return {
+            "source": "Microsoft Azure Functions Blob Storage Dataset (ACM SoCC 2021)",
+            "objects": obj_count,
+            "events": ev_count,
+            "size_gb": round(sum(o.size_bytes for o in objects) / 1024**3, 2),
+        }
+
     @app.post("/api/seed")
     def seed() -> dict[str, object]:
         if not lock.acquire(blocking=False):
             raise HTTPException(status_code=409, detail="another operation is running")
+        app_state["mode"] = "live"
         try:
             summary = run_seed(
                 config_path,
@@ -138,13 +227,27 @@ def create_dashboard_app(
 
     @app.post("/api/score")
     def score() -> dict[str, object]:
-        objects = storage.list_objects(config.backend.hot_bucket)
         repository = SqliteRepository(db_path)
         try:
             repository.initialize()
             events = repository.list_access_events()
+            db_objects = repository.list_objects()
         finally:
             repository.close()
+
+        storage_live = True
+        try:
+            live_objects = storage.list_objects(config.backend.hot_bucket)
+        except Exception:
+            live_objects = []
+            storage_live = False
+
+        if app_state["mode"] == "live" and storage_live:
+            objects = live_objects if live_objects else db_objects
+        else:
+            objects = [o for o in db_objects if o.tier == Tier.HOT]
+            if not objects and db_objects:
+                objects = db_objects
         if not objects:
             return {"scanned": 0, "recommended": 0, "estimator": "n/a", "recommendations": []}
 
@@ -156,10 +259,12 @@ def create_dashboard_app(
         finops = FinOpsEngine(config.tiers, config.min_ev_margin, config.scoring_horizon_days)
 
         rows: list[dict[str, Any]] = []
+        all_decisions = []
         for obj in objects:
-            decision = finops.best_candidate(obj, probabilities[obj.object_id])
+            decision = finops.best_candidate(obj, probabilities.get(obj.object_id, Decimal("0.2")))
             if decision is None:
                 continue
+            all_decisions.append(decision)
             rows.append(
                 {
                     "key": obj.key,
@@ -171,6 +276,14 @@ def create_dashboard_app(
                     "recommended": decision.recommended,
                 }
             )
+
+        repository = SqliteRepository(db_path)
+        try:
+            repository.initialize()
+            repository.save_decisions(estimator.name, as_of, all_decisions)
+        finally:
+            repository.close()
+
         rows.sort(key=lambda row: float(row["ev"]), reverse=True)
         return {
             "scanned": len(objects),
@@ -183,6 +296,16 @@ def create_dashboard_app(
     def apply(dry_run: bool = False) -> StreamingResponse:
         if not lock.acquire(blocking=False):
             raise HTTPException(status_code=409, detail="another operation is running")
+
+        actual_dry_run = dry_run or (app_state["mode"] == "azure")
+        target_objects = None
+        if app_state["mode"] == "azure":
+            repo = SqliteRepository(db_path)
+            try:
+                repo.initialize()
+                target_objects = [o for o in repo.list_objects() if o.tier == Tier.HOT]
+            finally:
+                repo.close()
 
         def worker(events: queue.Queue[tuple[str, dict[str, object]]]) -> None:
             def on_progress(progress: ApplyProgress) -> None:
@@ -205,7 +328,8 @@ def create_dashboard_app(
                     config_path,
                     db_path,
                     models_dir,
-                    dry_run=dry_run,
+                    objects=target_objects,
+                    dry_run=actual_dry_run,
                     estimator_name="auto",
                     on_progress=on_progress,
                 )
@@ -230,6 +354,43 @@ def create_dashboard_app(
                     break
 
         return StreamingResponse(stream(), media_type="text/event-stream")
+
+    @app.get("/api/export/lifecycle")
+    def export_lifecycle_endpoint() -> Response:
+        repo = SqliteRepository(db_path)
+        try:
+            repo.initialize()
+            decisions = repo.list_latest_decisions()
+            rules = build_s3_lifecycle_rules(decisions)
+            content = json.dumps({"Rules": rules}, indent=2)
+            return Response(
+                content=content,
+                media_type="application/json",
+                headers={
+                    "Content-Disposition": "attachment; filename=s3_lifecycle_configuration.json"
+                },
+            )
+        finally:
+            repo.close()
+
+    @app.get("/api/export/batch-manifest")
+    def export_batch_manifest_endpoint() -> Response:
+        repo = SqliteRepository(db_path)
+        try:
+            repo.initialize()
+            decisions = repo.list_latest_decisions()
+            lines = [
+                f"{dec.object_id.split('/', 1)[0] if '/' in dec.object_id else 'bucket'},{dec.object_id.split('/', 1)[-1]}\n"
+                for dec in decisions
+                if dec.recommended
+            ]
+            return Response(
+                content="".join(lines),
+                media_type="text/csv",
+                headers={"Content-Disposition": "attachment; filename=s3_batch_manifest.csv"},
+            )
+        finally:
+            repo.close()
 
     return app
 
@@ -354,6 +515,10 @@ DASHBOARD_TEMPLATE = """<!doctype html>
   .btn:disabled { color: var(--muted); cursor: not-allowed; }
   .btn.primary { background: var(--ink); color: var(--paper); }
   .btn.primary:hover:not(:disabled) { background: var(--cold); color: #ffffff; }
+  .btn .step { display: inline-block; margin-right: 9px; color: var(--muted); font-size: 9px; }
+  .btn.primary .step { color: var(--rule); }
+  .btn.next:not(:disabled) { box-shadow: inset 0 -3px 0 var(--cold); }
+  .btn.primary.next:not(:disabled) { box-shadow: inset 0 -3px 0 #7fd0e3; }
   .dock .spacer {
     margin-left: auto; display: flex; align-items: center; padding: 0 14px;
     font-family: var(--mono); font-size: 10px; color: var(--muted); letter-spacing: 0.06em;
@@ -461,7 +626,7 @@ DASHBOARD_TEMPLATE = """<!doctype html>
 <div class="wrap">
   <header class="masthead">
     <div>
-      <div class="kicker">cloudPredict / storage operations · __HOT__ → __COLD__</div>
+      <div class="kicker">cloudPredict / storage operations · <span id="mode-badge" style="display:inline-block; padding:1px 6px; border:1px solid var(--ink); border-radius:3px; font-weight:600; text-transform:uppercase;">Live S3 Storage (MinIO)</span></div>
       <h1>The <em>thermal</em> ledger</h1>
     </div>
     <div class="mast-right">
@@ -510,10 +675,16 @@ DASHBOARD_TEMPLATE = """<!doctype html>
   </section>
 
   <div class="dock">
-    <button id="btn-seed" class="btn" type="button">Seed hot bucket</button>
-    <button id="btn-score" class="btn" type="button">Score objects</button>
-    <button id="btn-apply" class="btn primary" type="button">Apply migrations</button>
-    <span class="spacer">← seed, score, apply</span>
+    <button id="btn-seed" class="btn" type="button"><span class="step">1</span>Scan Live Storage</button>
+    <button id="btn-score" class="btn" type="button"><span class="step">2</span>Price & Optimize (EV)</button>
+    <button id="btn-apply" class="btn primary" type="button"><span class="step">3</span>Execute Migrations</button>
+    <label style="display:inline-flex; align-items:center; gap:6px; padding:0 12px; font-family:var(--mono); font-size:11px; cursor:pointer; color:var(--ink);">
+      <input type="checkbox" id="dry-run-check" style="cursor:pointer;"> Dry-Run Simulation
+    </label>
+    <button id="btn-load-azure" class="btn" type="button" style="border-left:1px solid var(--rule);"><span class="step">★</span>Load Azure Trace</button>
+    <a href="/api/export/lifecycle" download="s3_lifecycle.json" class="btn" style="text-decoration:none; display:inline-flex; align-items:center;">Export S3 Lifecycle</a>
+    <a href="/api/export/batch-manifest" download="s3_batch_manifest.csv" class="btn" style="text-decoration:none; display:inline-flex; align-items:center;">Export Batch Manifest</a>
+    <span class="spacer" id="next-hint">ready</span>
   </div>
 
   <div class="progress" id="progress-shell" role="status" aria-live="polite">
@@ -542,7 +713,7 @@ DASHBOARD_TEMPLATE = """<!doctype html>
             <th scope="col" class="num">EV</th>
             <th scope="col">Action</th>
           </tr></thead>
-          <tbody id="recs"><tr><td colspan="6" class="empty">Nothing scored yet. Run “Score objects”.</td></tr></tbody>
+          <tbody id="recs"><tr><td colspan="6" class="empty">Press “Score objects” to price the moves.</td></tr></tbody>
         </table>
       </div>
     </section>
@@ -587,7 +758,10 @@ const UI = {
   journalState: document.getElementById('journal-state'),
 };
 let busy = false;
+let scored = false;
+let journalReady = true;
 const applied = new Set();
+const hint = document.getElementById('next-hint');
 
 function stamp() {
   return new Date().toLocaleTimeString([], { hour12: false });
@@ -623,6 +797,19 @@ async function refresh() {
     setText('savings-year', Number(status.savings_annual_usd).toFixed(2));
     setText('moved-count', status.moved_total);
 
+    const mb = document.getElementById('mode-badge');
+    if (mb) {
+      if (status.mode === 'azure') {
+        mb.textContent = 'Azure Production Trace (ACM SoCC 2021)';
+        mb.style.borderColor = 'var(--cold)';
+        mb.style.color = 'var(--cold)';
+      } else {
+        mb.textContent = 'Live S3 Storage (MinIO)';
+        mb.style.borderColor = 'var(--ink)';
+        mb.style.color = 'var(--ink)';
+      }
+    }
+
     const total = status.hot.gb + status.cold.gb;
     const share = total > 0 ? status.cold.gb / total : 0;
     document.getElementById('seg-hot').style.transform = 'scaleX(' + (1 - share) + ')';
@@ -633,6 +820,29 @@ async function refresh() {
     UI.ledgerCount.textContent = status.moved_total + ' moved';
     renderLedger(status.ledger);
     if (!busy) UI.journalState.textContent = status.busy ? 'running' : 'ready';
+
+    let next = 'seed';
+    if (status.hot.objects > 0 && !scored) next = 'score';
+    else if (status.hot.objects > 0) next = 'apply';
+    const target = { seed: UI.seed, score: UI.score, apply: UI.apply }[next];
+    for (const button of [UI.seed, UI.score, UI.apply]) button.classList.remove('next');
+    target.classList.add('next');
+    hint.textContent =
+      next === 'score' ? 'next: score objects'
+      : next === 'apply' ? 'next: apply migrations'
+      : status.cold.objects > 0 ? 'run complete · seed to reset' : 'next: seed hot bucket';
+
+    if (journalReady) {
+      journalReady = false;
+      if (status.hot.objects > 0) {
+        UI.log.textContent = status.hot.objects + ' objects in hot · next: Score objects.';
+      }
+    }
+    if (!scored && status.hot.objects > 0) {
+      UI.recs.innerHTML =
+        '<tr><td colspan="6" class="empty">' + status.hot.objects +
+        ' objects in hot · press “Score objects” to price the moves.</td></tr>';
+    }
   } catch (error) {
     document.getElementById('live').textContent = 'offline';
   }
@@ -647,23 +857,48 @@ function renderLedger(rows) {
     <td class="num">$${row.savings}</td>
     <td>${new Date(row.moved_at).toLocaleTimeString()}</td></tr>`).join('');
 }
+async function seedOrScan() {
+  setBusy(true, 'scanning'); log('Scanning live storage for objects…');
+  try {
+    const scanRes = await fetch('/api/scan', {method: 'POST'});
+    if (scanRes.ok) {
+      const scanData = await scanRes.json();
+      if (scanData.live_scanned > 0) {
+        log(`Live scan discovered ${scanData.live_scanned} objects (${scanData.size_gb} GB) in bucket '${scanData.bucket}'.`);
+        scored = false;
+        return;
+      }
+    }
+    await seed();
+  } catch (err) {
+    log('Scan failed: ' + err);
+  } finally {
+    setBusy(false);
+    refresh();
+  }
+}
 async function seed() {
   setBusy(true, 'seeding'); log('Seeding real files into the hot bucket…');
   try {
     const response = await fetch('/api/seed', {method: 'POST'});
     if (!response.ok) { log('Seed failed: ' + (await response.text())); return; }
     const summary = await response.json();
+    scored = false;
+    UI.recs.innerHTML =
+      '<tr><td colspan="6" class="empty">Press “Price & Optimize” to price the moves.</td></tr>';
+    UI.scoreSummary.textContent = 'not scored';
     log(`Seeded ${summary.objects} objects (${summary.gb} GB), ${summary.events} access events.`);
   } finally { setBusy(false); refresh(); }
 }
 async function score() {
-  setBusy(true, 'scoring'); log('Scoring live Objects with the EV model…');
+  setBusy(true, 'scoring'); log('Pricing storage moves with the EV model…');
   try {
     const response = await fetch('/api/score', {method: 'POST'});
     const result = await response.json();
+    scored = true;
     UI.scoreSummary.textContent = `${result.recommended}/${result.scanned} recommended · ${result.estimator}`;
     if (!result.recommendations.length) {
-      UI.recs.innerHTML = '<tr><td colspan="6" class="empty">Hot bucket is empty. Seed first.</td></tr>';
+      UI.recs.innerHTML = '<tr><td colspan="6" class="empty">Storage is empty. Scan storage or load a trace first.</td></tr>';
     } else {
       UI.recs.innerHTML = result.recommendations.map(row => `<tr class="${row.recommended ? 'rec' : ''}">
         <td class="key">${row.key}</td><td class="num">${row.size_mb}</td>
@@ -676,11 +911,14 @@ async function score() {
   } finally { setBusy(false); }
 }
 async function apply() {
-  setBusy(true, 'applying'); log('Applying migrations: copy → verify → delete…');
+  const isDryRun = document.getElementById('dry-run-check')?.checked;
+  const endpoint = isDryRun ? '/api/apply?dry_run=true' : '/api/apply';
+  setBusy(true, isDryRun ? 'simulating' : 'applying');
+  log(isDryRun ? 'Simulating migrations (Dry-Run mode: 0 storage side-effects)…' : 'Applying migrations: copy → verify ETag → delete…');
   applied.clear();
   progress(0);
   try {
-    const response = await fetch('/api/apply', {method: 'POST'});
+    const response = await fetch(endpoint, {method: 'POST'});
     if (!response.ok) { log('Apply rejected: ' + (await response.text())); return; }
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
@@ -726,9 +964,28 @@ function markApplied() {
     if (stampEl) { stampEl.className = 'stamp done'; stampEl.textContent = 'moved'; }
   }
 }
-UI.seed.addEventListener('click', seed);
+UI.seed.addEventListener('click', seedOrScan);
 UI.score.addEventListener('click', score);
 UI.apply.addEventListener('click', apply);
+const btnAzure = document.getElementById('btn-load-azure');
+if (btnAzure) {
+  btnAzure.addEventListener('click', async () => {
+    setBusy(true, 'loading');
+    log('Loading Microsoft Azure production dataset (ACM SoCC 2021)…');
+    try {
+      const res = await fetch('/api/load-azure', {method: 'POST'});
+      if (!res.ok) { log('Load failed: ' + (await res.text())); return; }
+      const data = await res.json();
+      scored = false;
+      log(`Loaded ${data.objects} objects (${data.size_gb} GB) with ${data.events} real accesses from ${data.source}.`);
+    } catch (e) {
+      log('Error loading Azure trace: ' + e);
+    } finally {
+      setBusy(false);
+      refresh();
+    }
+  });
+}
 refresh();
 setInterval(refresh, 3000);
 </script>

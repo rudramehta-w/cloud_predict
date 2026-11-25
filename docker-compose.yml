@@ -1,0 +1,41 @@
+services:
+  cloudpredict:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: cloudpredict-app
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      - CLOUDPREDICT_SILO_ENDPOINT=http://s3-storage:9000
+      - CLOUDPREDICT_SILO_ACCESS_KEY=minioadmin
+      - CLOUDPREDICT_SILO_SECRET_KEY=minioadmin
+    depends_on:
+      s3-storage:
+        condition: service_healthy
+    volumes:
+      - ./data:/app/data
+      - ./config:/app/config
+
+  s3-storage:
+    image: minio/minio:RELEASE.2024-05-10T01-41-38Z
+    container_name: cloudpredict-s3-storage
+    restart: unless-stopped
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    environment:
+      - MINIO_ROOT_USER=minioadmin
+      - MINIO_ROOT_PASSWORD=minioadmin
+    command: server /data --console-address ":9001"
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    volumes:
+      - s3-data:/data
+
+volumes:
+  s3-data:

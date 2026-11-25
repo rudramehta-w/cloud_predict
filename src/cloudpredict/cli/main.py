@@ -7,6 +7,9 @@ from collections.abc import Sequence
 
 from cloudpredict.cli import (
     apply,
+    daemon,
+    export_batch_manifest,
+    export_lifecycle,
     generate,
     ingest,
     report,
@@ -14,6 +17,7 @@ from cloudpredict.cli import (
     seed_minio,
     setup_minio,
     train,
+    web,
 )
 
 
@@ -31,6 +35,10 @@ def build_parser() -> argparse.ArgumentParser:
     setup_minio.register(subparsers)
     seed_minio.register(subparsers)
     apply.register(subparsers)
+    export_lifecycle.register(subparsers)
+    export_batch_manifest.register(subparsers)
+    web.register(subparsers)
+    daemon.register(subparsers)
     return parser
 
 
