@@ -34,7 +34,9 @@ def _unique_key() -> str:
     return f"__contract__/{uuid.uuid4().hex}.bin"
 
 
-def test_setup_minio_cli_is_idempotent(capsys: pytest.CaptureFixture[str]) -> None:
+def test_setup_minio_cli_is_idempotent(
+    storage: SiloStorage, capsys: pytest.CaptureFixture[str]
+) -> None:
     exit_code = main(["setup-minio"])
     output = capsys.readouterr().out
 
