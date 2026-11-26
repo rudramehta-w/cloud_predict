@@ -88,11 +88,18 @@ def _run(args: argparse.Namespace) -> int:
         else f"{GREEN}● ACTIVE STORAGE MIGRATION (Two-Phase Verified Moves){RESET}"
     )
 
+    if args.estimator == "auto":
+        resolved_label = (
+            "auto → XGBoost" if (args.models_dir / "xgboost.pkl").exists() else "auto → Heuristic"
+        )
+    else:
+        resolved_label = args.estimator
+
     fields: list[tuple[str, str]] = [
         ("Process State", f"{GREEN}● RUNNING{RESET} (PID {os.getpid()})"),
         ("Reconcile Cadence", f"Every {args.interval}s ({(args.interval / 60):.1f} min)"),
         ("Execution Mode", mode_label),
-        ("Inference Model", f"{CYAN}{args.estimator}{RESET}"),
+        ("Access Predictor", f"{CYAN}{resolved_label}{RESET}"),
         ("Persistence Store", f"{GRAY}{args.db}{RESET}"),
         ("Configuration", f"{GRAY}{args.config}{RESET}"),
     ]
