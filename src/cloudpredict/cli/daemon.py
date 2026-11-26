@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import signal
 import sys
 import time
@@ -11,6 +12,18 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from cloudpredict.cli.banner import (
+    BOLD,
+    CYAN,
+    GRAY,
+    GREEN,
+    ORANGE,
+    RED,
+    RESET,
+    YELLOW,
+    print_banner,
+    print_status_box,
+)
 from cloudpredict.infrastructure.apply import DEFAULT_DB, DEFAULT_MODELS_DIR, run_apply
 from cloudpredict.infrastructure.config import DEFAULT_CONFIG_PATH
 from cloudpredict.infrastructure.enterprise_export import build_s3_lifecycle_rules
@@ -67,24 +80,37 @@ def _run(args: argparse.Namespace) -> int:
     signal.signal(signal.SIGINT, _handle_exit)
     signal.signal(signal.SIGTERM, _handle_exit)
 
-    mode_label = "DRY-RUN SIMULATION" if args.dry_run else "ACTIVE STORAGE MIGRATION"
-    print("=" * 70)
-    print("  cloudPredict Autonomous Reconciliation Daemon")
-    print(f"  Mode:        {mode_label}")
-    print(f"  Interval:    Every {args.interval}s")
-    print(f"  Estimator:   {args.estimator}")
-    print(f"  Database:    {args.db}")
-    print(f"  Config:      {args.config}")
+    print_banner()
+
+    mode_label = (
+        f"{YELLOW}● DRY-RUN SIMULATION (Read-Only / Zero Storage Writes){RESET}"
+        if args.dry_run
+        else f"{GREEN}● ACTIVE STORAGE MIGRATION (Two-Phase Verified Moves){RESET}"
+    )
+
+    fields: list[tuple[str, str]] = [
+        ("Process State", f"{GREEN}● RUNNING{RESET} (PID {os.getpid()})"),
+        ("Reconcile Cadence", f"Every {args.interval}s ({(args.interval / 60):.1f} min)"),
+        ("Execution Mode", mode_label),
+        ("Inference Model", f"{CYAN}{args.estimator}{RESET}"),
+        ("Persistence Store", f"{GRAY}{args.db}{RESET}"),
+        ("Configuration", f"{GRAY}{args.config}{RESET}"),
+    ]
     if args.export_lifecycle:
-        print(f"  Export IaC:  {args.export_lifecycle}")
-    print("=" * 70)
-    print("  Daemon active. Press Ctrl+C to terminate.\n")
+        fields.append(("IaC Rule Export", f"{CYAN}{args.export_lifecycle}{RESET}"))
+
+    print_status_box("DAEMON CONTROL PLANE", fields)
+    print(
+        f"  {GRAY}Autonomous background loop engaged. Press {BOLD}Ctrl+C{RESET}{GRAY} to stop.{RESET}\n"
+    )
 
     cycle = 0
     while running:
         cycle += 1
         now_str = datetime.now(UTC).strftime("%Y-%m-%d %H:%M:%S UTC")
-        print(f"[{now_str}] [Cycle #{cycle}] Starting storage reconciliation...")
+        print(
+            f"  {CYAN}❯{RESET} {BOLD}[{now_str}]{RESET} Cycle #{cycle}: Initiating reconciliation..."
+        )
 
         try:
             summary = run_apply(
@@ -94,25 +120,38 @@ def _run(args: argparse.Namespace) -> int:
                 dry_run=args.dry_run,
                 estimator_name=args.estimator,
             )
-            scanned = summary.get("scanned", 0)
-            moved = summary.get("moved", 0)
-            planned = summary.get("planned", 0)
-            skipped = summary.get("skipped", 0)
-            failed = summary.get("failed", 0)
-            savings = summary.get("savings_usd", "0.00")
-            model = summary.get("estimator", args.estimator)
+            scanned = val if isinstance((val := summary.get("scanned")), int) else 0
+            moved = val if isinstance((val := summary.get("moved")), int) else 0
+            planned = val if isinstance((val := summary.get("planned")), int) else 0
+            skipped = val if isinstance((val := summary.get("skipped")), int) else 0
+            failed = val if isinstance((val := summary.get("failed")), int) else 0
+            savings = str(summary.get("savings_usd", "0.00"))
+            model = str(summary.get("estimator", args.estimator))
 
             if args.dry_run:
+                print(f"    {GREEN}✔{RESET} Inventory Scanned: {BOLD}{scanned:,}{RESET} objects")
                 print(
-                    f"[{now_str}] [Cycle #{cycle}] Completed (dry-run): "
-                    f"scanned={scanned}, planned={planned}, skipped={skipped}, "
-                    f"potential_savings=${savings}/mo (model: {model})"
+                    f"    {CYAN}✔{RESET} ML Prediction:     Model '{model}' completed temporal inference"
+                )
+                print(
+                    f"    {ORANGE}✔{RESET} Planned Moves:     {BOLD}{planned:,}{RESET} candidates identified (dry-run)"
+                )
+                print(f"    {GRAY}✔{RESET} Retained in Tier:  {skipped:,} objects")
+                print(
+                    f"    {GREEN}✔{RESET} Projected Savings: {BOLD}+${savings}/mo{RESET} Net Expected Value"
                 )
             else:
+                status_icon = f"{RED}✖{RESET}" if failed > 0 else f"{GREEN}✔{RESET}"
+                print(f"    {GREEN}✔{RESET} Inventory Scanned: {BOLD}{scanned:,}{RESET} objects")
                 print(
-                    f"[{now_str}] [Cycle #{cycle}] Completed: "
-                    f"scanned={scanned}, moved={moved}, skipped={skipped}, "
-                    f"failed={failed}, savings=${savings}/mo (model: {model})"
+                    f"    {CYAN}✔{RESET} ML Prediction:     Model '{model}' evaluated access probability"
+                )
+                print(
+                    f"    {GREEN}✔{RESET} Physical Moves:    {BOLD}{moved:,}{RESET} migrated with 2-phase ETag verification"
+                )
+                print(f"    {status_icon} Failures / Alerts:  {failed}")
+                print(
+                    f"    {GREEN}✔{RESET} Realized Savings:  {BOLD}+${savings}/mo{RESET} Net Expected Value"
                 )
 
             if args.export_lifecycle:
@@ -126,21 +165,22 @@ def _run(args: argparse.Namespace) -> int:
                         json.dumps({"Rules": rules}, indent=2), encoding="utf-8"
                     )
                     print(
-                        f"[{now_str}] [Cycle #{cycle}] Updated S3 Lifecycle rules at "
-                        f"{args.export_lifecycle}"
+                        f"    {CYAN}✔{RESET} IaC Compilation:   {len(rules)} lifecycle rule(s) written to {args.export_lifecycle}"
                     )
                 finally:
                     repo.close()
 
         except Exception as error:
             print(
-                f"[{now_str}] [Cycle #{cycle}] ERROR during reconciliation: {error}",
+                f"    {RED}✖ Reconciliation Error:{RESET} {error}",
                 file=sys.stderr,
             )
 
         if args.iterations > 0 and cycle >= args.iterations:
-            print(f"[daemon] Reached iteration limit ({args.iterations}). Exiting.")
+            print(f"\n  {GRAY}Iteration limit reached ({args.iterations}). Exiting cleanly.{RESET}")
             break
+
+        print(f"  {GRAY}⏳ Next reconciliation cycle in {args.interval}s...{RESET}\n")
 
         # Sleep in 1-second chunks to handle SIGINT immediately
         for _ in range(args.interval):

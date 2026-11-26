@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import sys
 from collections.abc import Sequence
 
 from cloudpredict.cli import (
@@ -19,12 +20,13 @@ from cloudpredict.cli import (
     train,
     web,
 )
+from cloudpredict.cli.banner import print_banner
 
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="cloudpredict",
-        description="EV-based storage tiering recommendations (advise-only).",
+        description="Autonomous cloud storage tiering & Expected-Value FinOps platform.",
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
     generate.register(subparsers)
@@ -43,7 +45,13 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
+    effective_argv = list(sys.argv[1:] if argv is None else argv)
+    if not effective_argv or effective_argv[0] in ("-h", "--help"):
+        print_banner()
+        parser = build_parser()
+        parser.print_help()
+        return 0 if effective_argv else 2
     parser = build_parser()
-    args = parser.parse_args(argv)
+    args = parser.parse_args(effective_argv)
     result: int = args.func(args)
     return result
