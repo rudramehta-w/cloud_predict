@@ -170,7 +170,6 @@ uv run pytest
 
 ## 8. Project Artifacts & Evaluation
 
-- **Evaluation Presentation Deck**: [Cloud_Predict_Evaluation_III.pptx](docs/presentation/Cloud_Predict_Evaluation_III.pptx) (15 slides, includes speaker notes)
 - **Click-by-Click Demo Runbook**: [DEMO.md](DEMO.md)
 - **Architecture Decision Records**: [docs/adr/](docs/adr/)
 - **Domain Modeling & Terms**: [GLOSSARY.md](GLOSSARY.md)
