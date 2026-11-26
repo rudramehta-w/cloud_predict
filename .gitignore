@@ -45,6 +45,13 @@ assets/
 .images
 =1
 
+# Report generation & data formatting scripts
+generate_report*.py
+generate_diagrams*.py
+make_report_data.py
+report_data*.py
+update_generator.py
+
 # Presentations
 docs/presentation/
 
