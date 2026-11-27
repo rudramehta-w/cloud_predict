@@ -80,6 +80,8 @@ class SqliteRepository:
     def reset(self) -> None:
         self._connection.execute("DELETE FROM access_events")
         self._connection.execute("DELETE FROM objects")
+        self._connection.execute("DELETE FROM tier_decisions")
+        self._connection.execute("DELETE FROM migration_ledger")
         self._connection.commit()
 
     def add_objects(self, objects: Iterable[StorageObject]) -> int:
